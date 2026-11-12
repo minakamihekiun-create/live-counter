@@ -60,6 +60,8 @@
   .view-info b{color:var(--text);font-weight:600}
   .view-info a{color:var(--accent2)}
   .view-info .tag{display:inline-block;font-size:11px;border:1px solid var(--line);border-radius:4px;padding:0 5px;margin-left:6px;color:var(--muted)}
+  .history{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.7}
+  .history b{color:var(--text)}
   .io-msg{font-size:12px;margin:-4px 0 8px 2px;color:var(--ok);white-space:pre-wrap}
   .io-msg.err{color:var(--warn)}
   body.dragging .wrap{outline:2px dashed var(--accent2);outline-offset:6px;border-radius:12px}
@@ -140,7 +142,7 @@
 
   <div class="panel">
     <details>
-      <summary>ログ / 使い方メモ</summary>
+      <summary>ログ / 使い方メモ / 更新履歴（<span id="verLabel"></span>）</summary>
       <div class="hint">
         ・APIキーは管理者が設定済みです。1日の無料枠（10,000ユニット）を利用者全員で共有しているので、使わないときは「停止」を押してください。<br>
         ・枠の消費の目安（60秒間隔）：同接・高評価だけなら1時間 約60ユニット、チャットの勢いも記録すると1時間 約360ユニットです（1日の無料枠は10,000）。<br>
@@ -149,6 +151,16 @@
         ・配信者が視聴者数を非表示にしている配信は取得できません（空欄で記録されます）。<br>
         ・チャンネル指定で検知が遅いときは、配信URLを直接貼ると確実です。<br>
         ・推定クォータ使用量（今日）：<code id="quota">0</code> ユニット
+      </div>
+      <div class="history">
+        <b>更新履歴</b><br>
+        v1.6　管理用の操作ログを追加<br>
+        v1.5　CSVから復元（グラフ・メモ・チャンネル情報・アーカイブへのジャンプを再現）<br>
+        v1.4　メモ機能、グラフやメモからアーカイブへジャンプ<br>
+        v1.3　グラフ画像の保存、配信終了時にCSVと画像を自動保存<br>
+        v1.2　高評価数とチャットの勢いを記録、グラフに重ねて表示<br>
+        v1.1　APIキーの埋め込みに対応（GitHub Pagesで共有）<br>
+        v1.0　同接の記録、グラフ、CSV出力、チャンネルの自動検知
       </div>
       <div id="log" class="log" style="margin-top:10px"></div>
     </details>
@@ -160,8 +172,31 @@
 // 発行したAPIキーを '' の中に貼り付けてください。
 // 空のままにすると、画面にAPIキー入力欄が表示されます。
 const BUILTIN_API_KEY = 'AIzaSyAZem8SqBtG-7wd69W0mSw6cY_Hz6VfE00';
+// 操作ログの送信先（Google Apps Script のウェブアプリURL）を '' の中に貼り付けてください。
+// 空のままにすると、操作ログは送信されません。
+const LOG_ENDPOINT = 'https://script.google.com/macros/s/AKfycbzKgj8mq0bBv7Qzez0kmgB0kpBTnTec54G42Qi8gtboluL3fYs931EqLDKSbWTjxrlKzw/exec';
 // ======================
+const APP_VERSION = 'v1.6';
 (() => {
+  // ---------- usage log (anonymous) ----------
+  // 送るのは「匿名の利用者ID・操作の種類・数字だけの詳細・バージョン」のみ。チャンネル名・動画・タイトルは送らない。
+  function anonId(){
+    try{
+      let id = localStorage.getItem('ytlv_uid');
+      if(!id){ id = 'U-' + Math.random().toString(36).slice(2, 8); localStorage.setItem('ytlv_uid', id); }
+      return id;
+    }catch(e){ return 'U-unknown'; }
+  }
+  function sendLog(action, detail){
+    if(!LOG_ENDPOINT) return;
+    try{
+      fetch(LOG_ENDPOINT, {
+        method:'POST', mode:'no-cors', keepalive:true,
+        headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body: JSON.stringify({uid:anonId(), action, detail:detail || '', ver:APP_VERSION, ts:new Date().toISOString()})
+      }).catch(() => {});
+    }catch(e){}
+  }
   const API = 'https://www.googleapis.com/youtube/v3/';
   const $ = id => document.getElementById(id);
   const store = {
@@ -254,6 +289,7 @@ const BUILTIN_API_KEY = 'AIzaSyAZem8SqBtG-7wd69W0mSw6cY_Hz6VfE00';
     store.set('ytlv_poll', +$('pollSec').value); store.set('ytlv_detect', +$('detectMin').value);
     running = true; $('btnStart').disabled = true; $('btnStop').disabled = false;
     $('meta').innerHTML = '';
+    sendLog('監視開始', `${t.type === 'video' ? '配信URL指定' : 'チャンネル指定'} / 記録間隔${Math.max(15, +$('pollSec').value || 60)}秒 / チャット${$('chatOn').checked ? 'ON' : 'OFF'}`);
     try{
       if(t.type === 'video'){
         mode = 'video'; channel = null;
@@ -281,6 +317,7 @@ const BUILTIN_API_KEY = 'AIzaSyAZem8SqBtG-7wd69W0mSw6cY_Hz6VfE00';
 
   function fail(e){
     log('エラー: ' + e.message);
+    sendLog('エラー', e.reason || 'その他');
     stop('エラー: ' + e.message);
     $('dot').className = 'dot err';
   }
@@ -341,6 +378,7 @@ const BUILTIN_API_KEY = 'AIzaSyAZem8SqBtG-7wd69W0mSw6cY_Hz6VfE00';
     }
     if(!s.channelId) s.channelId = it.snippet.channelId;
     current = s; viewId = videoId; save(); refreshSelect();
+    sendLog('記録開始', mode === 'channel' ? 'ライブを自動検知' : '配信URLを指定');
     $('meta').innerHTML = `<b>${esc(s.title)}</b> ／ ${esc(s.channelTitle)} ／ <a href="https://www.youtube.com/watch?v=${videoId}" target="_blank" rel="noopener">配信を開く</a>`;
     if(it.snippet.liveBroadcastContent === 'upcoming'){
       setStatus('watch', '配信開始前です。始まったら記録を開始します');
@@ -373,11 +411,12 @@ const BUILTIN_API_KEY = 'AIzaSyAZem8SqBtG-7wd69W0mSw6cY_Hz6VfE00';
         schedule(poll, ms);
       } else {
         log(`配信終了: ${current.title}（${current.points.length}件記録）`);
+        sendLog('配信終了', `${current.points.length}件記録 / 約${dur(current.points.length ? current.points[current.points.length-1][0] - current.points[0][0] : 0)}`);
         current.ended = lsd.actualEndTime || new Date().toISOString(); save(); chatState = null;
         const done = current; current = null;
         if($('autoSave').checked && done.points.length){
-          downloadCsv(done);
-          setTimeout(() => downloadPng(done), 1200);
+          downloadCsv(done, true);
+          setTimeout(() => downloadPng(done, true), 1200);
           log('CSVとグラフ画像を自動保存しました');
         }
         if(mode === 'channel'){
@@ -454,7 +493,7 @@ const BUILTIN_API_KEY = 'AIzaSyAZem8SqBtG-7wd69W0mSw6cY_Hz6VfE00';
     if(current && current.videoId === viewId){ setStatus('err','記録中のデータは削除できません。先に停止してください'); return; }
     const b = $('btnDel');
     if(b.dataset.confirm !== viewId){ b.dataset.confirm = viewId; b.textContent = 'もう一度押すと削除'; setTimeout(() => { b.dataset.confirm=''; b.textContent='この記録を削除'; }, 3000); return; }
-    delete sessions[viewId]; save(); viewId = null; b.dataset.confirm=''; b.textContent='この記録を削除'; refreshSelect();
+    delete sessions[viewId]; save(); viewId = null; sendLog('記録を削除'); b.dataset.confirm=''; b.textContent='この記録を削除'; refreshSelect();
   };
 
   function fileBase(s){
@@ -468,8 +507,9 @@ const BUILTIN_API_KEY = 'AIzaSyAZem8SqBtG-7wd69W0mSw6cY_Hz6VfE00';
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   }
-  function downloadCsv(s){
+  function downloadCsv(s, auto){
     if(!s || !s.points.length) return;
+    sendLog('CSV保存', auto ? '自動' : '手動');
     const t0 = s.actualStart ? Date.parse(s.actualStart) : s.points[0][0];
     let csv = '時刻,配信開始からの経過(分),同時視聴者数,高評価数,チャット(件/分),メモ,メモ時刻,動画URL,タイトル,チャンネル,チャンネルURL,配信開始\n';
     const cell = x => x == null ? '' : x;
@@ -503,8 +543,9 @@ const BUILTIN_API_KEY = 'AIzaSyAZem8SqBtG-7wd69W0mSw6cY_Hz6VfE00';
     if(ch.length){ r.chatPeak = ch.reduce((a,p) => p[3] > a[3] ? p : a); r.chatAvg = Math.round(ch.reduce((a,p) => a + p[3], 0) / ch.length * 10) / 10; }
     return r;
   }
-  function downloadPng(s){
+  function downloadPng(s, auto){
     if(!s || !s.points.length) return;
+    sendLog('画像保存', auto ? '自動' : '手動');
     const W = 1280, H = 720, SC = 1.5;
     const c2 = document.createElement('canvas'); c2.width = W*SC; c2.height = H*SC;
     const g = c2.getContext('2d'); g.setTransform(SC,0,0,SC,0,0);
@@ -604,6 +645,7 @@ const BUILTIN_API_KEY = 'AIzaSyAZem8SqBtG-7wd69W0mSw6cY_Hz6VfE00';
     save();
     $('memoText').value = ''; $('memoTime').value = '';
     const pts = s.points, outside = pts.length && (ts < pts[0][0] - 60000 || ts > pts[pts.length-1][0] + 60000);
+    sendLog('メモ追加', tStr ? '時刻を指定' : '記録中に追加');
     memoMsg(`${hms(ts)} にメモを追加しました` + (outside ? '（記録した範囲の外なので、グラフには表示されません）' : ''), outside);
     render();
     $('memoText').focus();
@@ -629,7 +671,7 @@ const BUILTIN_API_KEY = 'AIzaSyAZem8SqBtG-7wd69W0mSw6cY_Hz6VfE00';
       const del = document.createElement('button'); del.className = 'md'; del.textContent = '×'; del.title = 'このメモを削除';
       del.onclick = () => {
         const i = s.memos.indexOf(m); if(i >= 0) s.memos.splice(i, 1);
-        save(); render(); memoMsg('メモを削除しました');
+        save(); render(); memoMsg('メモを削除しました'); sendLog('メモ削除');
       };
       row.append(mt, me, mx, del); box.appendChild(row);
     }
@@ -791,6 +833,8 @@ const BUILTIN_API_KEY = 'AIzaSyAZem8SqBtG-7wd69W0mSw6cY_Hz6VfE00';
     }
     if(lastId){ viewId = lastId; memoMsg(''); refreshSelect(); }
     ioMsg(lines.join('\n'), anyErr);
+    const okN = lines.filter(l => l.startsWith('✓')).length;
+    sendLog('CSV復元', `${files.length}ファイル / 成功${okN}`);
   }
 
   $('btnImport').onclick = () => $('csvFile').click();
@@ -980,10 +1024,16 @@ const BUILTIN_API_KEY = 'AIzaSyAZem8SqBtG-7wd69W0mSw6cY_Hz6VfE00';
   });
   window.addEventListener('resize', render);
 
+  $('verLabel').textContent = APP_VERSION;
   $('btnStart').onclick = start;
-  $('btnStop').onclick = () => { if(current) save(); stop('停止しました（記録は保存済み）'); };
+  $('btnStop').onclick = () => {
+    if(current) save();
+    sendLog('停止', current ? `記録中に停止 / ${current.points.length}件` : '待機中に停止');
+    stop('停止しました（記録は保存済み）');
+  };
 
   refreshSelect();
+  sendLog('ページを開いた');
 })();
 </script>
 </body>
