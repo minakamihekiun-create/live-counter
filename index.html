@@ -56,6 +56,13 @@
   .legend{display:flex;gap:14px;font-size:12px;color:var(--muted);margin:0 0 6px 4px}
   .legend i{display:inline-block;width:14px;height:3px;border-radius:2px;vertical-align:middle;margin-right:5px}
   #chart{cursor:pointer}
+  .view-info{font-size:12.5px;color:var(--muted);margin:-2px 0 8px 2px;min-height:18px}
+  .view-info b{color:var(--text);font-weight:600}
+  .view-info a{color:var(--accent2)}
+  .view-info .tag{display:inline-block;font-size:11px;border:1px solid var(--line);border-radius:4px;padding:0 5px;margin-left:6px;color:var(--muted)}
+  .io-msg{font-size:12px;margin:-4px 0 8px 2px;color:var(--ok);white-space:pre-wrap}
+  .io-msg.err{color:var(--warn)}
+  body.dragging .wrap{outline:2px dashed var(--accent2);outline-offset:6px;border-radius:12px}
   .memo-in{margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
   .memo-in .f-time{flex:0 0 150px}
   .memo-in .f-text{flex:1 1 260px}
@@ -112,8 +119,12 @@
       <div class="seg">重ねて表示：<button data-sec="chat" class="on">チャット勢い</button><button data-sec="likes">高評価数</button><button data-sec="none">なし</button></div>
       <button id="btnCsv">CSVダウンロード</button>
       <button id="btnPng">グラフ画像を保存</button>
+      <button id="btnImport">CSVから復元</button>
+      <input type="file" id="csvFile" accept=".csv,text/csv" multiple style="display:none">
       <button id="btnDel">この記録を削除</button>
     </div>
+    <div id="ioMsg" class="io-msg"></div>
+    <div id="viewInfo" class="view-info"></div>
     <div class="legend"><span><i style="background:#ff4d5e"></i>同時視聴者数（左軸）</span><span id="legSec"><i style="background:#4da3ff"></i><span id="legSecName">チャット勢い（件/分・右軸）</span></span></div>
     <div class="chartbox"><canvas id="chart"></canvas><div id="tip" class="tip"></div></div>
     <div class="memo-in">
@@ -324,10 +335,11 @@ const BUILTIN_API_KEY = 'AIzaSyAZem8SqBtG-7wd69W0mSw6cY_Hz6VfE00';
     let s = sessions[videoId];
     if(!s){
       s = sessions[videoId] = {
-        videoId, title:it.snippet.title, channelTitle:it.snippet.channelTitle,
+        videoId, title:it.snippet.title, channelTitle:it.snippet.channelTitle, channelId:it.snippet.channelId,
         actualStart: lsd.actualStartTime || null, points: []
       };
     }
+    if(!s.channelId) s.channelId = it.snippet.channelId;
     current = s; viewId = videoId; save(); refreshSelect();
     $('meta').innerHTML = `<b>${esc(s.title)}</b> ／ ${esc(s.channelTitle)} ／ <a href="https://www.youtube.com/watch?v=${videoId}" target="_blank" rel="noopener">配信を開く</a>`;
     if(it.snippet.liveBroadcastContent === 'upcoming'){
@@ -427,7 +439,7 @@ const BUILTIN_API_KEY = 'AIzaSyAZem8SqBtG-7wd69W0mSw6cY_Hz6VfE00';
     for(const s of list){
       const o = document.createElement('option');
       const d = s.points[0] ? new Date(s.points[0][0]).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '未記録';
-      o.value = s.videoId; o.textContent = `${d}　${s.channelTitle}｜${s.title}`;
+      o.value = s.videoId; o.textContent = `${d}　${s.channelTitle}｜${s.title}${s.imported ? '（CSV）' : ''}`;
       sel.appendChild(o);
     }
     if(viewId && sessions[viewId]) sel.value = viewId;
@@ -459,7 +471,7 @@ const BUILTIN_API_KEY = 'AIzaSyAZem8SqBtG-7wd69W0mSw6cY_Hz6VfE00';
   function downloadCsv(s){
     if(!s || !s.points.length) return;
     const t0 = s.actualStart ? Date.parse(s.actualStart) : s.points[0][0];
-    let csv = '時刻,配信開始からの経過(分),同時視聴者数,高評価数,チャット(件/分),メモ\n';
+    let csv = '時刻,配信開始からの経過(分),同時視聴者数,高評価数,チャット(件/分),メモ,メモ時刻,動画URL,タイトル,チャンネル,チャンネルURL,配信開始\n';
     const cell = x => x == null ? '' : x;
     const q = x => x ? '"' + String(x).replace(/"/g, '""') + '"' : '';
     // assign each memo to the row with the nearest time
@@ -467,13 +479,18 @@ const BUILTIN_API_KEY = 'AIzaSyAZem8SqBtG-7wd69W0mSw6cY_Hz6VfE00';
     for(const m of sortedMemos(s)){
       let bi = 0, bd = Infinity;
       s.points.forEach((p, i) => { const d = Math.abs(p[0] - m.ts); if(d < bd){ bd = d; bi = i; } });
-      (memoAt[bi] = memoAt[bi] || []).push(m.text);
+      (memoAt[bi] = memoAt[bi] || []).push(m);
     }
+    const meta = [
+      `https://www.youtube.com/watch?v=${s.videoId}`, s.title || '', s.channelTitle || '',
+      s.channelId ? `https://www.youtube.com/channel/${s.channelId}` : '', s.actualStart || ''
+    ].map(q).join(',');
     for(let i = 0; i < s.points.length; i++){
       const [ts, v, lk, ch] = s.points[i];
       const d = new Date(ts);
       const iso = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${d.toLocaleTimeString('ja-JP')}`;
-      csv += `${iso},${((ts - t0)/60000).toFixed(1)},${cell(v)},${cell(lk)},${cell(ch)},${q(memoAt[i] && memoAt[i].join(' / '))}\n`;
+      const ms = memoAt[i] || [];
+      csv += `${iso},${((ts - t0)/60000).toFixed(1)},${cell(v)},${cell(lk)},${cell(ch)},${q(ms.map(m => m.text).join(' / '))},${q(ms.map(m => hms(m.ts)).join(' / '))},${i === 0 ? meta : ',,,,'}\n`;
     }
     saveBlob(new Blob(['﻿' + csv], {type:'text/csv'}), fileBase(s) + '.csv');
   }
@@ -623,6 +640,167 @@ const BUILTIN_API_KEY = 'AIzaSyAZem8SqBtG-7wd69W0mSw6cY_Hz6VfE00';
     if(e.key === 'Enter' && !e.isComposing && e.keyCode !== 229){ e.preventDefault(); addMemo(); }
   }));
 
+  // ---------- view info ----------
+  function renderViewInfo(){
+    const el = $('viewInfo'), s = sessions[viewId];
+    if(!s){ el.textContent = ''; return; }
+    const ch = s.channelId
+      ? `<a href="https://www.youtube.com/channel/${esc(s.channelId)}" target="_blank" rel="noopener">${esc(s.channelTitle || 'チャンネル')}</a>`
+      : esc(s.channelTitle || '');
+    el.innerHTML = `<b>${esc(s.title || '')}</b> ／ ${ch} ／ <a href="https://www.youtube.com/watch?v=${esc(s.videoId)}" target="_blank" rel="noopener">アーカイブを開く</a>` +
+      (s.imported ? '<span class="tag">CSVから復元</span>' : '');
+  }
+
+  // ---------- CSV import ----------
+  function ioMsg(text, isErr){ const el = $('ioMsg'); el.textContent = text || ''; el.className = 'io-msg' + (isErr ? ' err' : ''); }
+
+  function parseCsv(text){
+    const rows = []; let row = [], f = '', q = false;
+    for(let i = 0; i < text.length; i++){
+      const c = text[i];
+      if(q){
+        if(c === '"'){ if(text[i+1] === '"'){ f += '"'; i++; } else q = false; }
+        else f += c;
+      } else if(c === '"') q = true;
+      else if(c === ','){ row.push(f); f = ''; }
+      else if(c === '\n' || c === '\r'){
+        if(c === '\r' && text[i+1] === '\n') i++;
+        row.push(f); rows.push(row); row = []; f = '';
+      } else f += c;
+    }
+    if(f !== '' || row.length){ row.push(f); rows.push(row); }
+    return rows.filter(r => r.some(x => x.trim() !== ''));
+  }
+
+  async function readText(file){
+    const buf = await file.arrayBuffer();
+    try{ return new TextDecoder('utf-8', {fatal:true}).decode(buf).replace(/^﻿/, ''); }
+    catch(e){ return new TextDecoder('shift_jis').decode(buf); } // saved from Excel as "CSV"
+  }
+
+  // "2026-11-12 7:13:56" / "2026/11/12 7:13" -> local timestamp
+  function parseDateTime(str){
+    const m = String(str).trim().match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})[ T]+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    if(!m) return null;
+    return new Date(+m[1], +m[2]-1, +m[3], +m[4], +m[5], m[6] ? +m[6] : 0).getTime();
+  }
+  const num = x => { if(x == null) return null; x = String(x).replace(/,/g, '').trim(); if(x === '') return null; const n = Number(x); return isFinite(n) ? n : null; };
+
+  async function importCsvFile(file){
+    const rows = parseCsv(await readText(file));
+    if(rows.length < 2) throw new Error('データの行がありません');
+    const head = rows[0].map(h => h.trim());
+    const col = name => head.indexOf(name);
+    const cT = col('時刻'), cE = col('配信開始からの経過(分)'), cV = col('同時視聴者数'), cL = col('高評価数'), cC = col('チャット(件/分)'),
+          cM = col('メモ'), cMT = col('メモ時刻'), cU = col('動画URL'), cTi = col('タイトル'), cCh = col('チャンネル'), cCU = col('チャンネルURL'), cS = col('配信開始');
+    if(cT < 0 || cV < 0) throw new Error('同接レコーダーのCSVではないようです（「時刻」「同時視聴者数」の列がありません）');
+    const body = rows.slice(1), first = body[0];
+    const get = (r, c) => c >= 0 && r[c] != null ? r[c].trim() : '';
+
+    // video ID: column -> file name
+    let videoId = null;
+    const u = get(first, cU).match(/(?:[?&]v=|youtu\.be\/|\/live\/)([\w-]{11})/);
+    if(u) videoId = u[1];
+    if(!videoId){ const fm = file.name.match(/_([\w-]{11})(?:\s*\(\d+\))?\.csv$/i); if(fm) videoId = fm[1]; }
+    if(!videoId) throw new Error('動画IDがわかりません。ツールで保存したときのファイル名のまま読み込んでください');
+
+    // points
+    const points = [], memos = [];
+    let startFromElapsed = null;
+    for(const r of body){
+      const ts = parseDateTime(get(r, cT));
+      if(ts == null) continue;
+      points.push([ts, num(get(r, cV)), cL >= 0 ? num(get(r, cL)) : null, cC >= 0 ? num(get(r, cC)) : null]);
+      const el = cE >= 0 ? num(get(r, cE)) : null;
+      if(startFromElapsed == null && el != null) startFromElapsed = ts - el * 60000;
+      const mtext = get(r, cM);
+      if(mtext){
+        const texts = mtext.split(' / '), times = get(r, cMT) ? get(r, cMT).split(' / ') : [];
+        texts.forEach((t, i) => {
+          let mts = ts;
+          const tm = times[i] && times[i].match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+          if(tm){ // put the exact memo time on the row's date, nearest to the row
+            const best = [-1, 0, 1].map(off => { const d = new Date(ts); d.setDate(d.getDate() + off); d.setHours(+tm[1], +tm[2], tm[3] ? +tm[3] : 0, 0); return d.getTime(); })
+              .reduce((a, b) => Math.abs(b - ts) < Math.abs(a - ts) ? b : a);
+            mts = best;
+          }
+          memos.push({ts: mts, text: t});
+        });
+      }
+    }
+    if(!points.length) throw new Error('時刻を読み取れる行がありません');
+    points.sort((a, b) => a[0] - b[0]);
+
+    // metadata
+    let actualStart = get(first, cS) && !isNaN(Date.parse(get(first, cS))) ? new Date(Date.parse(get(first, cS))).toISOString() : null;
+    if(!actualStart && startFromElapsed != null) actualStart = new Date(startFromElapsed).toISOString();
+    const chm = get(first, cCU).match(/channel\/(UC[\w-]{22})/);
+    let channelTitle = get(first, cCh);
+    if(!channelTitle){ const fm = file.name.match(/^同接_\d{8}_(.+)_[\w-]{11}(?:\s*\(\d+\))?\.csv$/i); if(fm) channelTitle = fm[1]; }
+    const meta = { title: get(first, cTi) || '（タイトル不明）', channelTitle: channelTitle || '', channelId: chm ? chm[1] : null, actualStart };
+
+    // merge into existing session or create
+    let s = sessions[videoId], added = 0, addedMemos = 0;
+    if(!s){
+      s = sessions[videoId] = { videoId, ...meta, points: [], memos: [], imported: true };
+    } else {
+      for(const k of ['title','channelTitle','channelId','actualStart']) if(!s[k] && meta[k]) s[k] = meta[k];
+      if(s.title === '（タイトル不明）' && meta.title !== '（タイトル不明）') s.title = meta.title;
+    }
+    for(const p of points){
+      if(!s.points.some(e => Math.abs(e[0] - p[0]) < 5000)){ s.points.push(p); added++; }
+    }
+    s.points.sort((a, b) => a[0] - b[0]);
+    s.memos = s.memos || [];
+    for(const m of memos){
+      if(!s.memos.some(e => e.text === m.text && Math.abs(e.ts - m.ts) < 60000)){ s.memos.push(m); addedMemos++; }
+    }
+    save();
+    return {s, added, total: points.length, addedMemos, oldFormat: cU < 0};
+  }
+
+  // fill missing title / channel / start time from the API (1 unit per video)
+  async function enrichFromApi(s){
+    if(!getKey()) return false;
+    if(s.channelId && s.title !== '（タイトル不明）' && s.actualStart && s.channelTitle) return false;
+    try{
+      const j = await yt('videos', {part:'snippet,liveStreamingDetails', id:s.videoId});
+      const it = j.items && j.items[0]; if(!it) return false;
+      s.title = it.snippet.title; s.channelTitle = it.snippet.channelTitle; s.channelId = it.snippet.channelId;
+      if(it.liveStreamingDetails && it.liveStreamingDetails.actualStartTime) s.actualStart = it.liveStreamingDetails.actualStartTime;
+      save(); return true;
+    }catch(e){ log('復元時の情報取得エラー: ' + e.message); return false; }
+  }
+
+  async function importFiles(files){
+    files = [...files].filter(f => /\.csv$/i.test(f.name));
+    if(!files.length){ ioMsg('CSVファイルを選んでください', true); return; }
+    const lines = []; let lastId = null, anyErr = false;
+    for(const f of files){
+      try{
+        const r = await importCsvFile(f);
+        const enriched = await enrichFromApi(r.s);
+        lastId = r.s.videoId;
+        let line = `✓ ${f.name}：${r.added}件のデータ`;
+        if(r.added < r.total) line += `（${r.total - r.added}件はすでにあったので統合）`;
+        if(r.addedMemos) line += `・メモ${r.addedMemos}件`;
+        line += 'を復元しました';
+        if(r.oldFormat) line += enriched ? '（旧形式のCSV：タイトル等はYouTubeから取得）' : '（旧形式のCSV：配信開始時刻は「経過(分)」から推定）';
+        lines.push(line);
+      }catch(e){ anyErr = true; lines.push(`✗ ${f.name}：${e.message}`); }
+    }
+    if(lastId){ viewId = lastId; memoMsg(''); refreshSelect(); }
+    ioMsg(lines.join('\n'), anyErr);
+  }
+
+  $('btnImport').onclick = () => $('csvFile').click();
+  $('csvFile').onchange = e => { importFiles(e.target.files); e.target.value = ''; };
+  let dragDepth = 0;
+  window.addEventListener('dragenter', e => { if([...e.dataTransfer.types].includes('Files')){ dragDepth++; document.body.classList.add('dragging'); } });
+  window.addEventListener('dragleave', () => { if(--dragDepth <= 0){ dragDepth = 0; document.body.classList.remove('dragging'); } });
+  window.addEventListener('dragover', e => e.preventDefault());
+  window.addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging'); if(e.dataTransfer.files.length) importFiles(e.dataTransfer.files); });
+
   // ---------- chart ----------
   const cv = $('chart'), ctx = cv.getContext('2d'), tip = $('tip');
   let geom = null;
@@ -665,6 +843,7 @@ const BUILTIN_API_KEY = 'AIzaSyAZem8SqBtG-7wd69W0mSw6cY_Hz6VfE00';
     } else { $('sCount').textContent = '–'; $('sElapsed').innerHTML = '&nbsp;'; }
     draw(all);
     renderMemos();
+    renderViewInfo();
   }
 
   function niceStep(max){
