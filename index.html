@@ -55,6 +55,23 @@
   .seg button.on{background:var(--accent2);border-color:var(--accent2);color:#fff}
   .legend{display:flex;gap:14px;font-size:12px;color:var(--muted);margin:0 0 6px 4px}
   .legend i{display:inline-block;width:14px;height:3px;border-radius:2px;vertical-align:middle;margin-right:5px}
+  #chart{cursor:pointer}
+  .memo-in{margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
+  .memo-in .f-time{flex:0 0 150px}
+  .memo-in .f-text{flex:1 1 260px}
+  .memo-msg{font-size:12px;margin-top:6px;min-height:18px;color:var(--muted)}
+  .memo-msg.err{color:var(--warn)}
+  .memo-list{margin-top:6px}
+  .memo-item{display:flex;align-items:baseline;gap:12px;padding:6px 4px;border-bottom:1px solid var(--line);font-size:13px}
+  .memo-item:last-child{border-bottom:none}
+  .memo-item .mt{font-variant-numeric:tabular-nums;white-space:nowrap}
+  .memo-item .mt a{color:#f5b54a;text-decoration:none}
+  .memo-item .mt a:hover{text-decoration:underline}
+  .memo-item .me{color:var(--muted);font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums;min-width:96px}
+  .memo-item .mx{flex:1;word-break:break-word}
+  .memo-item .md{background:none;border:none;color:var(--muted);font-size:16px;padding:0 6px;line-height:1}
+  .memo-item .md:hover{color:#ff3b3b;background:none}
+  .memo-item .out{color:var(--warn);font-size:11px;margin-left:6px}
 </style>
 </head>
 <body>
@@ -71,6 +88,7 @@
       <div class="f-num"><label>記録間隔（秒）</label><input id="pollSec" type="number" min="15" value="60"></div>
       <div class="f-num"><label>配信検知間隔（分）</label><input id="detectMin" type="number" min="1" value="2"></div>
       <label class="chk"><input type="checkbox" id="chatOn" checked> チャットの勢いも記録 <small>（枠の消費 約6倍）</small></label>
+      <label class="chk"><input type="checkbox" id="autoSave" checked> 配信終了時にCSVと画像を自動保存</label>
       <div style="flex:1"></div>
       <button id="btnStart" class="primary">監視スタート</button>
       <button id="btnStop" disabled>停止</button>
@@ -90,13 +108,23 @@
 
   <div class="panel">
     <div class="row" style="margin-bottom:10px;align-items:center">
-      <div style="flex:1 1 300px"><select id="sessionSel"></select></div>
+      <div style="flex:1 1 180px;min-width:0"><select id="sessionSel"></select></div>
       <div class="seg">重ねて表示：<button data-sec="chat" class="on">チャット勢い</button><button data-sec="likes">高評価数</button><button data-sec="none">なし</button></div>
       <button id="btnCsv">CSVダウンロード</button>
+      <button id="btnPng">グラフ画像を保存</button>
       <button id="btnDel">この記録を削除</button>
     </div>
     <div class="legend"><span><i style="background:#ff4d5e"></i>同時視聴者数（左軸）</span><span id="legSec"><i style="background:#4da3ff"></i><span id="legSecName">チャット勢い（件/分・右軸）</span></span></div>
     <div class="chartbox"><canvas id="chart"></canvas><div id="tip" class="tip"></div></div>
+    <div class="memo-in">
+      <div class="row">
+        <div class="f-time"><label>時刻（空欄＝今）</label><input id="memoTime" placeholder="7:30 / 7:30:15" autocomplete="off"></div>
+        <div class="f-text"><label>メモ</label><input id="memoText" placeholder="例：話題が○○に切り替わった" autocomplete="off"></div>
+        <button id="btnMemo">メモ</button>
+      </div>
+      <div id="memoMsg" class="memo-msg"></div>
+      <div id="memoList" class="memo-list"></div>
+    </div>
   </div>
 
   <div class="panel">
@@ -146,6 +174,8 @@ const BUILTIN_API_KEY = 'AIzaSyAZem8SqBtG-7wd69W0mSw6cY_Hz6VfE00';
   $('detectMin').value = store.get('ytlv_detect', 2);
   $('chatOn').checked = store.get('ytlv_chat', true);
   $('chatOn').onchange = () => store.set('ytlv_chat', $('chatOn').checked);
+  $('autoSave').checked = store.get('ytlv_auto', true);
+  $('autoSave').onchange = () => store.set('ytlv_auto', $('autoSave').checked);
   let secMode = store.get('ytlv_sec', 'chat');
   const SEC = { chat:{idx:3, name:'チャット勢い（件/分・右軸）'}, likes:{idx:2, name:'高評価数（右軸）'} };
   function applySecButtons(){
@@ -333,6 +363,11 @@ const BUILTIN_API_KEY = 'AIzaSyAZem8SqBtG-7wd69W0mSw6cY_Hz6VfE00';
         log(`配信終了: ${current.title}（${current.points.length}件記録）`);
         current.ended = lsd.actualEndTime || new Date().toISOString(); save(); chatState = null;
         const done = current; current = null;
+        if($('autoSave').checked && done.points.length){
+          downloadCsv(done);
+          setTimeout(() => downloadPng(done), 1200);
+          log('CSVとグラフ画像を自動保存しました');
+        }
         if(mode === 'channel'){
           setStatus('watch', `「${done.title}」の配信が終了。次の配信を待機します`);
           schedule(detect, 60000);
@@ -400,7 +435,7 @@ const BUILTIN_API_KEY = 'AIzaSyAZem8SqBtG-7wd69W0mSw6cY_Hz6VfE00';
     render();
   }
 
-  $('sessionSel').onchange = e => { viewId = e.target.value; render(); };
+  $('sessionSel').onchange = e => { viewId = e.target.value; memoMsg(''); render(); };
 
   $('btnDel').onclick = () => {
     if(!viewId || !sessions[viewId]) return;
@@ -410,24 +445,183 @@ const BUILTIN_API_KEY = 'AIzaSyAZem8SqBtG-7wd69W0mSw6cY_Hz6VfE00';
     delete sessions[viewId]; save(); viewId = null; b.dataset.confirm=''; b.textContent='この記録を削除'; refreshSelect();
   };
 
-  $('btnCsv').onclick = () => {
-    const s = sessions[viewId]; if(!s || !s.points.length) return;
+  function fileBase(s){
+    const d = s.points[0] ? new Date(s.points[0][0]) : new Date();
+    const ymd = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+    return `同接_${ymd}_${s.channelTitle}_${s.videoId}`.replace(/[\\/:*?"<>|\s]/g,'_');
+  }
+  function saveBlob(blob, name){
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }
+  function downloadCsv(s){
+    if(!s || !s.points.length) return;
     const t0 = s.actualStart ? Date.parse(s.actualStart) : s.points[0][0];
-    let csv = '時刻,配信開始からの経過(分),同時視聴者数,高評価数,チャット(件/分)\n';
+    let csv = '時刻,配信開始からの経過(分),同時視聴者数,高評価数,チャット(件/分),メモ\n';
     const cell = x => x == null ? '' : x;
-    for(const [ts, v, lk, ch] of s.points){
+    const q = x => x ? '"' + String(x).replace(/"/g, '""') + '"' : '';
+    // assign each memo to the row with the nearest time
+    const memoAt = {};
+    for(const m of sortedMemos(s)){
+      let bi = 0, bd = Infinity;
+      s.points.forEach((p, i) => { const d = Math.abs(p[0] - m.ts); if(d < bd){ bd = d; bi = i; } });
+      (memoAt[bi] = memoAt[bi] || []).push(m.text);
+    }
+    for(let i = 0; i < s.points.length; i++){
+      const [ts, v, lk, ch] = s.points[i];
       const d = new Date(ts);
       const iso = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${d.toLocaleTimeString('ja-JP')}`;
-      csv += `${iso},${((ts - t0)/60000).toFixed(1)},${cell(v)},${cell(lk)},${cell(ch)}\n`;
+      csv += `${iso},${((ts - t0)/60000).toFixed(1)},${cell(v)},${cell(lk)},${cell(ch)},${q(memoAt[i] && memoAt[i].join(' / '))}\n`;
     }
-    const blob = new Blob(['﻿' + csv], {type:'text/csv'});
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    const safe = (s.channelTitle + '_' + s.videoId).replace(/[\\/:*?"<>|\s]/g,'_');
-    a.download = `同接_${safe}.csv`;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-  };
+    saveBlob(new Blob(['﻿' + csv], {type:'text/csv'}), fileBase(s) + '.csv');
+  }
+  function summarize(s){
+    const all = s.points, t0 = s.actualStart ? Date.parse(s.actualStart) : (all[0] ? all[0][0] : 0);
+    const v = all.filter(p => p[1] != null), lk = all.filter(p => p[2] != null), ch = all.filter(p => p[3] != null);
+    const r = {t0};
+    if(v.length){ r.peak = v.reduce((a,p) => p[1] > a[1] ? p : a); r.avg = Math.round(v.reduce((a,p) => a + p[1], 0) / v.length); }
+    if(lk.length){ r.likeLast = lk[lk.length-1][2]; r.likeGain = lk[lk.length-1][2] - lk[0][2]; }
+    if(ch.length){ r.chatPeak = ch.reduce((a,p) => p[3] > a[3] ? p : a); r.chatAvg = Math.round(ch.reduce((a,p) => a + p[3], 0) / ch.length * 10) / 10; }
+    return r;
+  }
+  function downloadPng(s){
+    if(!s || !s.points.length) return;
+    const W = 1280, H = 720, SC = 1.5;
+    const c2 = document.createElement('canvas'); c2.width = W*SC; c2.height = H*SC;
+    const g = c2.getContext('2d'); g.setTransform(SC,0,0,SC,0,0);
+    g.fillStyle = '#0f1115'; g.fillRect(0,0,W,H);
+    const font = '"Hiragino Sans","Noto Sans JP","Yu Gothic UI",system-ui,sans-serif';
+    const sm = summarize(s), all = s.points;
+    // header
+    g.textBaseline = 'top'; g.textAlign = 'left';
+    g.fillStyle = '#e8eaf0'; g.font = `700 26px ${font}`;
+    let title = s.title; while(g.measureText(title).width > W - 80 && title.length > 4) title = title.slice(0,-2);
+    if(title !== s.title) title += '…';
+    g.fillText(title, 40, 30);
+    const d0 = new Date(all[0][0]), d1 = new Date(all[all.length-1][0]);
+    g.fillStyle = '#8b93a7'; g.font = `16px ${font}`;
+    g.fillText(`${s.channelTitle}　｜　${d0.toLocaleDateString('ja-JP')} ${hm(d0)}〜${hm(d1)} 記録（配信開始から ${dur(all[all.length-1][0] - sm.t0)}）`, 40, 68);
+    // stat boxes
+    const boxes = [
+      ['ピーク同接', sm.peak ? fmt(sm.peak[1]) + ' 人' : '–', sm.peak ? `${hm(sm.peak[0])}（開始${dur(sm.peak[0]-sm.t0)}後）` : ''],
+      ['平均同接', sm.avg != null ? fmt(sm.avg) + ' 人' : '–', ''],
+      ['高評価', sm.likeLast != null ? fmt(sm.likeLast) : '–', sm.likeGain != null ? `記録中に +${fmt(sm.likeGain)}` : ''],
+      ['チャット勢い ピーク', sm.chatPeak ? fmt(sm.chatPeak[3]) + ' 件/分' : '–', sm.chatPeak ? `${hm(sm.chatPeak[0])}／平均 ${fmt(sm.chatAvg)} 件/分` : '']
+    ];
+    const bw = (W - 80 - 3*14) / 4;
+    boxes.forEach(([k, v, sub], i) => {
+      const x = 40 + i*(bw + 14), y = 104;
+      g.fillStyle = '#171a21'; g.strokeStyle = '#2a2f3a'; g.lineWidth = 1;
+      g.beginPath(); g.roundRect ? g.roundRect(x, y, bw, 86, 10) : g.rect(x, y, bw, 86); g.fill(); g.stroke();
+      g.fillStyle = '#8b93a7'; g.font = `13px ${font}`; g.fillText(k, x+14, y+12);
+      g.fillStyle = '#e8eaf0'; g.font = `700 26px ${font}`; g.fillText(v, x+14, y+32);
+      g.fillStyle = '#8b93a7'; g.font = `12px ${font}`; g.fillText(sub, x+14, y+66);
+    });
+    // legend
+    const sec = SEC[secMode];
+    g.font = `13px ${font}`;
+    g.fillStyle = '#ff4d5e'; g.fillRect(44, 214, 16, 3);
+    g.fillStyle = '#8b93a7'; g.fillText('同時視聴者数（左軸）', 66, 207);
+    if(sec){ g.fillStyle = '#4da3ff'; g.fillRect(230, 214, 16, 3); g.fillStyle = '#8b93a7'; g.fillText(sec.name, 252, 207); }
+    // chart
+    g.save(); g.translate(30, 236);
+    drawChart(g, W - 60, H - 236 - 34, all, sortedMemos(s));
+    g.restore();
+    g.fillStyle = '#5a6172'; g.font = `11px ${font}`; g.textAlign = 'right';
+    g.fillText('YouTubeライブ 同接レコーダー', W - 30, H - 22);
+    c2.toBlob(b => saveBlob(b, fileBase(s) + '.png'), 'image/png');
+  }
+  $('btnCsv').onclick = () => downloadCsv(sessions[viewId]);
+  $('btnPng').onclick = () => downloadPng(sessions[viewId]);
+
+  // ---------- memo / archive ----------
+  function streamStart(s){ return s.actualStart ? Date.parse(s.actualStart) : (s.points[0] ? s.points[0][0] : Date.now()); }
+  function archiveUrl(s, ts){
+    const sec = Math.max(0, Math.floor((ts - streamStart(s)) / 1000));
+    return `https://www.youtube.com/watch?v=${s.videoId}&t=${sec}s`;
+  }
+  function sortedMemos(s){ return (s.memos || []).slice().sort((a, b) => a.ts - b.ts); }
+  function elapsedLabel(ms){
+    const neg = ms < 0; ms = Math.abs(ms);
+    const t = Math.floor(ms / 1000), h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), sec = t % 60;
+    return (neg ? '開始前 ' : '+') + (h ? `${h}:${String(m).padStart(2,'0')}` : `${m}`) + ':' + String(sec).padStart(2,'0');
+  }
+  function memoMsg(text, isErr){ const el = $('memoMsg'); el.textContent = text || ''; el.className = 'memo-msg' + (isErr ? ' err' : ''); }
+
+  // "7:30" / "7:30:15" / "７：３０" -> timestamp on the stream's date (nearest day to the recorded range)
+  function parseMemoTime(str, s){
+    str = str.trim().replace(/[０-９：]/g, ch => ch === '：' ? ':' : String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+    const m = str.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    if(!m) return null;
+    const hh = +m[1], mm = +m[2], ss = m[3] ? +m[3] : 0;
+    if(hh > 23 || mm > 59 || ss > 59) return null;
+    const lo = s.points.length ? s.points[0][0] : streamStart(s);
+    const hi = s.points.length ? s.points[s.points.length - 1][0] : lo;
+    let best = null, bd = Infinity;
+    for(const off of [-1, 0, 1]){
+      const d = new Date(lo); d.setDate(d.getDate() + off); d.setHours(hh, mm, ss, 0);
+      const t = d.getTime(), dist = t < lo ? lo - t : t > hi ? t - hi : 0;
+      if(dist < bd){ bd = dist; best = t; }
+    }
+    return best;
+  }
+
+  function addMemo(){
+    const s = sessions[viewId];
+    const text = $('memoText').value.trim(), tStr = $('memoTime').value.trim();
+    if(!s){ memoMsg('メモを付ける配信がありません。先に記録するか、プルダウンで配信を選んでください', true); return; }
+    if(!text){ memoMsg('メモの内容を入力してください', true); $('memoText').focus(); return; }
+    let ts;
+    if(tStr){
+      ts = parseMemoTime(tStr, s);
+      if(ts == null){ memoMsg('時刻は「7:30」か「7:30:15」の形で入力してください', true); $('memoTime').focus(); return; }
+    } else {
+      if(!(running && current && current.videoId === s.videoId)){
+        memoMsg('この配信は記録中ではないので、時刻を入れてください（例：7:30）', true); $('memoTime').focus(); return;
+      }
+      ts = Date.now();
+    }
+    (s.memos = s.memos || []).push({ts, text});
+    save();
+    $('memoText').value = ''; $('memoTime').value = '';
+    const pts = s.points, outside = pts.length && (ts < pts[0][0] - 60000 || ts > pts[pts.length-1][0] + 60000);
+    memoMsg(`${hms(ts)} にメモを追加しました` + (outside ? '（記録した範囲の外なので、グラフには表示されません）' : ''), outside);
+    render();
+    $('memoText').focus();
+  }
+
+  function renderMemos(){
+    const box = $('memoList'); box.textContent = '';
+    const s = sessions[viewId]; if(!s) return;
+    const list = sortedMemos(s), t0 = streamStart(s), pts = s.points;
+    for(const m of list){
+      const row = document.createElement('div'); row.className = 'memo-item';
+      const mt = document.createElement('span'); mt.className = 'mt';
+      const a = document.createElement('a');
+      a.href = archiveUrl(s, m.ts - 15000); a.target = '_blank'; a.rel = 'noopener';
+      a.title = 'アーカイブをこの時刻の15秒前から開く';
+      a.textContent = hms(m.ts);
+      mt.appendChild(a);
+      const me = document.createElement('span'); me.className = 'me'; me.textContent = elapsedLabel(m.ts - t0);
+      const mx = document.createElement('span'); mx.className = 'mx'; mx.textContent = m.text;
+      if(pts.length && (m.ts < pts[0][0] - 60000 || m.ts > pts[pts.length-1][0] + 60000)){
+        const o = document.createElement('span'); o.className = 'out'; o.textContent = '（グラフ範囲外）'; mx.appendChild(o);
+      }
+      const del = document.createElement('button'); del.className = 'md'; del.textContent = '×'; del.title = 'このメモを削除';
+      del.onclick = () => {
+        const i = s.memos.indexOf(m); if(i >= 0) s.memos.splice(i, 1);
+        save(); render(); memoMsg('メモを削除しました');
+      };
+      row.append(mt, me, mx, del); box.appendChild(row);
+    }
+  }
+
+  $('btnMemo').onclick = addMemo;
+  ['memoText', 'memoTime'].forEach(id => $(id).addEventListener('keydown', e => {
+    if(e.key === 'Enter' && !e.isComposing && e.keyCode !== 229){ e.preventDefault(); addMemo(); }
+  }));
 
   // ---------- chart ----------
   const cv = $('chart'), ctx = cv.getContext('2d'), tip = $('tip');
@@ -470,6 +664,7 @@ const BUILTIN_API_KEY = 'AIzaSyAZem8SqBtG-7wd69W0mSw6cY_Hz6VfE00';
       $('sElapsed').textContent = '配信開始から ' + dur(all[all.length-1][0] - t0);
     } else { $('sCount').textContent = '–'; $('sElapsed').innerHTML = '&nbsp;'; }
     draw(all);
+    renderMemos();
   }
 
   function niceStep(max){
@@ -482,14 +677,19 @@ const BUILTIN_API_KEY = 'AIzaSyAZem8SqBtG-7wd69W0mSw6cY_Hz6VfE00';
     const W = cv.clientWidth, H = cv.clientHeight;
     cv.width = W*dpr; cv.height = H*dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
     ctx.clearRect(0,0,W,H);
+    const sv = sessions[viewId];
+    geom = drawChart(ctx, W, H, all, sv ? sortedMemos(sv) : []);
+  }
+
+  function drawChart(c, W, H, all, memos = []){
     const sec = SEC[secMode];
     const vPts = all.filter(p => p[1] != null);
     const sPts = sec ? all.filter(p => p[sec.idx] != null) : [];
     const L = 58, R = sec ? 58 : 16, T = 14, B = 30;
-    ctx.font = '11px system-ui, sans-serif';
+    c.font = '11px system-ui, sans-serif';
     if(!all.length || (!vPts.length && !sPts.length)){
-      ctx.fillStyle = '#8b93a7'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('データがまだありません', W/2, H/2); geom = null; return;
+      c.fillStyle = '#8b93a7'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.fillText('データがまだありません', W/2, H/2); return null;
     }
     const xs = all.map(p => p[0]);
     let x0 = Math.min(...xs), x1 = Math.max(...xs); if(x1 === x0){ x0 -= 60000; x1 += 60000; }
@@ -497,11 +697,11 @@ const BUILTIN_API_KEY = 'AIzaSyAZem8SqBtG-7wd69W0mSw6cY_Hz6VfE00';
     // left axis (viewers)
     const vmaxRaw = Math.max(1, ...vPts.map(p => p[1])), vStep = niceStep(vmaxRaw), vmax = Math.ceil(vmaxRaw*1.08/vStep)*vStep;
     const Y = v => T + (1 - v / vmax) * (H - T - B);
-    ctx.strokeStyle = '#2a2f3a'; ctx.lineWidth = 1; ctx.fillStyle = '#8b93a7'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    c.strokeStyle = '#2a2f3a'; c.lineWidth = 1; c.fillStyle = '#8b93a7'; c.textAlign = 'right'; c.textBaseline = 'middle';
     for(let v = 0; v <= vmax + 1e-9; v += vStep){
       const y = Math.round(Y(v)) + .5;
-      ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(W-R, y); ctx.stroke();
-      ctx.fillText(fmt(v), L-8, y);
+      c.beginPath(); c.moveTo(L, y); c.lineTo(W-R, y); c.stroke();
+      c.fillText(fmt(v), L-8, y);
     }
     // right axis (secondary)
     let Y2 = null;
@@ -513,33 +713,59 @@ const BUILTIN_API_KEY = 'AIzaSyAZem8SqBtG-7wd69W0mSw6cY_Hz6VfE00';
       lo = Math.floor(lo / st2) * st2;
       hi = lo + Math.ceil((hi - lo) * 1.05 / st2) * st2;
       Y2 = v => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
-      ctx.fillStyle = '#4da3ff'; ctx.textAlign = 'left';
-      for(let v = lo; v <= hi + 1e-9; v += st2) ctx.fillText(fmt(Math.round(v*10)/10), W-R+8, Y2(v));
+      c.fillStyle = '#4da3ff'; c.textAlign = 'left';
+      for(let v = lo; v <= hi + 1e-9; v += st2) c.fillText(fmt(Math.round(v*10)/10), W-R+8, Y2(v));
     }
     // x labels
-    ctx.fillStyle = '#8b93a7'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    c.fillStyle = '#8b93a7'; c.textAlign = 'center'; c.textBaseline = 'top';
     const spanMin = (x1-x0)/60000, cand = [1,2,5,10,15,30,60,120,180,360];
     const stepMin = cand.find(c => spanMin / c <= 8) || 720;
     const first = Math.ceil(x0 / (stepMin*60000)) * stepMin*60000;
-    for(let t = first; t <= x1; t += stepMin*60000) ctx.fillText(hm(t), X(t), H-B+8);
+    for(let t = first; t <= x1; t += stepMin*60000) c.fillText(hm(t), X(t), H-B+8);
     // viewers area + line
     if(vPts.length){
-      const grad = ctx.createLinearGradient(0,T,0,H-B);
+      const grad = c.createLinearGradient(0,T,0,H-B);
       grad.addColorStop(0,'rgba(255,77,94,.30)'); grad.addColorStop(1,'rgba(255,77,94,0)');
-      ctx.beginPath(); ctx.moveTo(X(vPts[0][0]), Y(0));
-      vPts.forEach(p => ctx.lineTo(X(p[0]), Y(p[1])));
-      ctx.lineTo(X(vPts[vPts.length-1][0]), Y(0)); ctx.closePath(); ctx.fillStyle = grad; ctx.fill();
-      ctx.beginPath(); vPts.forEach((p,i) => i ? ctx.lineTo(X(p[0]),Y(p[1])) : ctx.moveTo(X(p[0]),Y(p[1])));
-      ctx.strokeStyle = '#ff4d5e'; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
+      c.beginPath(); c.moveTo(X(vPts[0][0]), Y(0));
+      vPts.forEach(p => c.lineTo(X(p[0]), Y(p[1])));
+      c.lineTo(X(vPts[vPts.length-1][0]), Y(0)); c.closePath(); c.fillStyle = grad; c.fill();
+      c.beginPath(); vPts.forEach((p,i) => i ? c.lineTo(X(p[0]),Y(p[1])) : c.moveTo(X(p[0]),Y(p[1])));
+      c.strokeStyle = '#ff4d5e'; c.lineWidth = 2; c.lineJoin = 'round'; c.stroke();
       let pk = vPts[0]; for(const p of vPts) if(p[1] > pk[1]) pk = p;
-      ctx.fillStyle = '#ff4d5e'; ctx.beginPath(); ctx.arc(X(pk[0]), Y(pk[1]), 4, 0, Math.PI*2); ctx.fill();
+      c.fillStyle = '#ff4d5e'; c.beginPath(); c.arc(X(pk[0]), Y(pk[1]), 4, 0, Math.PI*2); c.fill();
     }
     // secondary line
     if(Y2){
-      ctx.beginPath(); sPts.forEach((p,i) => i ? ctx.lineTo(X(p[0]),Y2(p[sec.idx])) : ctx.moveTo(X(p[0]),Y2(p[sec.idx])));
-      ctx.strokeStyle = '#4da3ff'; ctx.lineWidth = 1.6; ctx.lineJoin = 'round'; ctx.stroke();
+      c.beginPath(); sPts.forEach((p,i) => i ? c.lineTo(X(p[0]),Y2(p[sec.idx])) : c.moveTo(X(p[0]),Y2(p[sec.idx])));
+      c.strokeStyle = '#4da3ff'; c.lineWidth = 1.6; c.lineJoin = 'round'; c.stroke();
     }
-    geom = {all, X, Y, Y2};
+    // memo markers (dashed vertical line + label)
+    const inRange = memos.filter(m => m.ts >= x0 - 30000 && m.ts <= x1 + 30000);
+    if(inRange.length){
+      const rows = []; // right edge of the last label in each row
+      c.save();
+      c.font = '11px "Hiragino Sans","Noto Sans JP","Yu Gothic UI",system-ui,sans-serif';
+      c.textBaseline = 'middle'; c.textAlign = 'left';
+      for(const m of inRange){
+        const x = Math.round(Math.max(L, Math.min(W - R, X(m.ts)))) + .5;
+        c.strokeStyle = 'rgba(245,181,74,.85)'; c.lineWidth = 1; c.setLineDash([4, 4]);
+        c.beginPath(); c.moveTo(x, T); c.lineTo(x, H - B); c.stroke(); c.setLineDash([]);
+        let label = `${hm(m.ts)} ${m.text}`;
+        while(c.measureText(label).width > 180 && label.length > 6) label = label.slice(0, -2);
+        if(label !== `${hm(m.ts)} ${m.text}`) label += '…';
+        const w = c.measureText(label).width + 10, h = 17;
+        let lx = x + 3; if(lx + w > W - R) lx = x - 3 - w;
+        let row = rows.findIndex(r => r < lx - 4); if(row < 0){ row = rows.length; }
+        if(row > 5) row = row % 6;
+        rows[row] = lx + w;
+        const ly = T + 2 + row * (h + 3);
+        c.fillStyle = 'rgba(15,17,21,.88)'; c.fillRect(lx, ly, w, h);
+        c.strokeStyle = 'rgba(245,181,74,.6)'; c.strokeRect(lx + .5, ly + .5, w - 1, h - 1);
+        c.fillStyle = '#f5b54a'; c.fillText(label, lx + 5, ly + h/2 + .5);
+      }
+      c.restore();
+    }
+    return {all, X, Y, Y2};
   }
 
   cv.addEventListener('mousemove', e => {
@@ -552,12 +778,27 @@ const BUILTIN_API_KEY = 'AIzaSyAZem8SqBtG-7wd69W0mSw6cY_Hz6VfE00';
     let txt = `${hms(best[0])}　同接 ${fmt(best[1])} 人`;
     if(best[2] != null) txt += `　高評価 ${fmt(best[2])}`;
     if(best[3] != null) txt += `　チャット ${fmt(best[3])}件/分`;
-    tip.textContent = txt;
+    tip.textContent = '';
+    tip.appendChild(document.createTextNode(txt));
+    const hintEl = document.createElement('div');
+    hintEl.style.cssText = 'color:#8b93a7;font-size:11px';
+    hintEl.textContent = 'クリックでアーカイブへ（この1分間の始まりから再生）';
+    tip.appendChild(hintEl);
     const px = geom.X(best[0]), py = best[1] != null ? geom.Y(best[1]) : 40;
     tip.style.left = Math.max(0, Math.min(px + 10, r.width - tip.offsetWidth - 4)) + 'px';
     tip.style.top = Math.max(py - 34, 0) + 'px';
   });
   cv.addEventListener('mouseleave', () => tip.style.display = 'none');
+  cv.addEventListener('click', e => {
+    if(!geom) return;
+    const s = sessions[viewId]; if(!s) return;
+    const r = cv.getBoundingClientRect(), mx = e.clientX - r.left;
+    let bi = -1, bd = Infinity;
+    geom.all.forEach((p, i) => { const d = Math.abs(geom.X(p[0]) - mx); if(d < bd){ bd = d; bi = i; } });
+    if(bi < 0 || bd > 40) return;
+    const startTs = bi > 0 ? geom.all[bi - 1][0] : geom.all[bi][0]; // start of that 1-minute interval
+    window.open(archiveUrl(s, startTs), '_blank', 'noopener');
+  });
   window.addEventListener('resize', render);
 
   $('btnStart').onclick = start;
