@@ -62,6 +62,19 @@
   .view-info .tag{display:inline-block;font-size:11px;border:1px solid var(--line);border-radius:4px;padding:0 5px;margin-left:6px;color:var(--muted)}
   .history{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.7}
   .history b{color:var(--text)}
+  .chat-panel .row{align-items:center}
+  .chat-panel input{max-width:420px}
+  .chat-count{font-size:12px;color:var(--muted)}
+  .chat-list{margin-top:8px;max-height:420px;overflow:auto;border-top:1px solid var(--line)}
+  .chat-item{display:flex;gap:10px;align-items:baseline;padding:5px 4px;border-bottom:1px solid var(--line);font-size:13px}
+  .chat-item .ct{white-space:nowrap;font-variant-numeric:tabular-nums}
+  .chat-item .ct a{color:#f5b54a;text-decoration:none}
+  .chat-item .ct a:hover{text-decoration:underline}
+  .chat-item .ce{color:var(--muted);font-size:12px;white-space:nowrap;min-width:72px;font-variant-numeric:tabular-nums}
+  .chat-item .ca{color:#4da3ff;font-size:12px;white-space:nowrap;min-width:44px}
+  .chat-item .cx{flex:1;word-break:break-word}
+  .chat-item .cb{font-size:11px;border-radius:4px;padding:0 5px;background:#3a2a10;color:#f5b54a;white-space:nowrap}
+  .chat-item mark{background:rgba(245,181,74,.35);color:inherit;border-radius:2px}
   .io-msg{font-size:12px;margin:-4px 0 8px 2px;color:var(--ok);white-space:pre-wrap}
   .io-msg.err{color:var(--warn)}
   body.dragging .wrap{outline:2px dashed var(--accent2);outline-offset:6px;border-radius:12px}
@@ -99,7 +112,7 @@
       <div class="f-num"><label>配信検知間隔（分）</label><input id="detectMin" type="number" min="1" value="2"></div>
       <div class="f-num"><label>開始前の記録（分前から）</label><input id="preMin" type="number" min="0" value="10" title="チャンネル監視中、配信予定時刻の何分前から記録を始めるか（0で開始前は記録しない）"></div>
       <label class="chk"><input type="checkbox" id="chatOn" checked> チャットの勢いも記録 <small>（枠の消費 約6倍）</small></label>
-      <label class="chk"><input type="checkbox" id="autoSave" checked> 配信終了時にCSVと画像を自動保存</label>
+      <label class="chk"><input type="checkbox" id="autoSave" checked> 配信終了時にCSV・画像・チャットCSVを自動保存</label>
       <div style="flex:1"></div>
       <button id="btnStart" class="primary">監視スタート</button>
       <button id="btnStop" disabled>停止</button>
@@ -124,6 +137,7 @@
       <div class="seg">重ねて表示：<button data-sec="chat" class="on">チャット勢い</button><button data-sec="likes">高評価数</button><button data-sec="none">なし</button></div>
       <button id="btnCsv">CSVダウンロード</button>
       <button id="btnPng">グラフ画像を保存</button>
+      <button id="btnChatCsv">チャットCSV</button>
       <button id="btnImport">CSVから復元</button>
       <input type="file" id="csvFile" accept=".csv,text/csv" multiple style="display:none">
       <button id="btnDel">この記録を削除</button>
@@ -143,6 +157,14 @@
     </div>
   </div>
 
+  <div class="panel chat-panel">
+    <div class="row">
+      <div style="flex:1 1 260px"><label>チャットをキーワードで検索（スペースや「、」で区切ると、どれかを含むものを表示）</label><input id="chatQ" placeholder="例：仙台　お茶会　迷って" autocomplete="off"></div>
+      <div class="chat-count" id="chatCount"></div>
+    </div>
+    <div id="chatList" class="chat-list"></div>
+  </div>
+
   <div class="panel">
     <details>
       <summary>ログ / 使い方メモ / 更新履歴（<span id="verLabel"></span>）</summary>
@@ -150,7 +172,7 @@
         ・APIキーは管理者が設定済みです。1日の無料枠（10,000ユニット）を利用者全員で共有しているので、使わないときは「停止」を押してください。<br>
         ・枠の消費の目安（60秒間隔）：同接・高評価だけなら1時間 約60ユニット、チャットの勢いも記録すると1時間 約360ユニットです（1日の無料枠は10,000）。<br>
         ・チャットの勢いは、前回の記録から今回までに投稿されたコメント数を「1分あたり」に換算した値です。記録開始直後の1回目は空欄になります。チャットがオフやメンバー限定の配信では記録されません。<br>
-        ・チャットした人数は、記録を始めてからチャットに書き込んだ人を、同じ人の重複を除いて数えた人数です（「チャットの勢いも記録」がオンのときだけ数えます）。記録開始より前の書き込みは含みません。数えるために投稿者のチャンネルIDだけをこのブラウザに保存しています（名前やコメント本文は保存しません）。<br>
+        ・チャットした人数は、記録を始めてからチャットに書き込んだ人を、同じ人の重複を除いて数えた人数です（「チャットの勢いも記録」がオンのときだけ数えます）。記録開始より前の書き込みは含みません。数えるために、投稿者のチャンネルIDとチャットの本文・投稿時刻をこのブラウザに保存しています（投稿者の名前は保存しません。画面やCSVでは投稿者を配信ごとの番号で表示します）。<br>
         ・配信開始前（待機所）のチャットも記録します。チャンネル監視中は配信予定時刻の「開始前の記録」分前から、配信URLを入れた場合は監視スタートを押した時点から記録します。開始前の同接（待機人数）は、YouTubeが値を返したときだけ記録します（返さないことが多いです）。開始前の値はグラフの線・ピーク・平均には含めず、ツールチップとCSVにだけ出します。<br>
         ・PCがスリープしたりタブを閉じたりすると記録が止まります。記録したデータはこのブラウザに保存されるので、再読み込みしても残ります。<br>
         ・配信者が視聴者数を非表示にしている配信は取得できません（空欄で記録されます）。<br>
@@ -159,6 +181,7 @@
       </div>
       <div class="history">
         <b>更新履歴</b><br>
+        v1.9　チャット本文の保存・キーワード検索・チャットCSVを追加（投稿者は番号で区別、名前は保存しない）<br>
         v1.8　配信開始前（待機所）のチャットを記録、グラフに開始前の区間を表示<br>
         v1.7　チャットした人数（同じ人の重複を除いた人数）を追加<br>
         v1.6　管理用の操作ログを追加<br>
@@ -183,7 +206,7 @@ const BUILTIN_API_KEY = 'AIzaSyAZem8SqBtG-7wd69W0mSw6cY_Hz6VfE00';
 // 空のままにすると、操作ログは送信されません。
 const LOG_ENDPOINT = 'https://script.google.com/macros/s/AKfycbzKgj8mq0bBv7Qzez0kmgB0kpBTnTec54G42Qi8gtboluL3fYs931EqLDKSbWTjxrlKzw/exec';
 // ======================
-const APP_VERSION = 'v1.8';
+const APP_VERSION = 'v1.9';
 (() => {
   // ---------- usage log (anonymous) ----------
   // 送るのは「匿名の利用者ID・操作の種類・数字だけの詳細・バージョン」のみ。チャンネル名・動画・タイトルは送らない。
@@ -396,6 +419,7 @@ const APP_VERSION = 'v1.8';
       };
     }
     if(!s.channelId) s.channelId = it.snippet.channelId;
+    await ensureChatters(videoId);
     current = s; viewId = videoId; save(); refreshSelect();
     sendLog('記録開始', how || '');
     $('meta').innerHTML = `<b>${esc(s.title)}</b> ／ ${esc(s.channelTitle)} ／ <a href="https://www.youtube.com/watch?v=${videoId}" target="_blank" rel="noopener">配信を開く</a>`;
@@ -440,7 +464,8 @@ const APP_VERSION = 'v1.8';
         if($('autoSave').checked && done.points.length){
           downloadCsv(done, true);
           setTimeout(() => downloadPng(done, true), 1200);
-          log('CSVとグラフ画像を自動保存しました');
+          setTimeout(() => downloadChatCsv(done, true), 2400);
+          log('CSV・グラフ画像・チャットCSVを自動保存しました');
         }
         if(mode === 'channel'){
           setStatus('watch', `「${done.title}」の配信が終了。次の配信を待機します`);
@@ -461,38 +486,87 @@ const APP_VERSION = 'v1.8';
   const CHAT_FATAL = new Set(['liveChatDisabled','liveChatNotFound','forbidden','liveChatEnded','insufficientPermissions']);
   // chatters: per stream, saved separately as {a:[authorChannelId...], f:[firstTs...], m:[[ts, authorIndex]...]}
   // only channel IDs and times are kept (no names, no message text)
-  const chatCache = {};
+  // stored per stream in IndexedDB: {a:[authorChannelId...], f:[firstTs...], m:[[ts, authorIndex(-1=unknown), type(0 normal/1 superchat/2 sticker), text, amount]...]}
+  // author names are never stored; authors are shown as per-stream numbers (#index+1)
+  const idb = (() => {
+    let dbp = null;
+    const open = () => dbp || (dbp = new Promise((res, rej) => {
+      if(!window.indexedDB) return rej(new Error('IndexedDBが使えません'));
+      const r = indexedDB.open('ytlv', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('chat');
+      r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+    }));
+    const tx = (mode, fn) => open().then(db => new Promise((res, rej) => {
+      const t = db.transaction('chat', mode), q = fn(t.objectStore('chat'));
+      t.oncomplete = () => res(q && q.result); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error);
+    }));
+    return { get: k => tx('readonly', st => st.get(k)), put: (k, v) => tx('readwrite', st => st.put(v, k)), del: k => tx('readwrite', st => st.delete(k)) };
+  })();
+  const chatCache = {}, chatLoading = {};
   function chatKey(videoId){ return 'ytlv_chatters_' + videoId; }
-  function loadChatters(videoId){
-    if(chatCache[videoId]) return chatCache[videoId];
-    const raw = store.get(chatKey(videoId), null);
-    const d = raw && raw.a ? raw : {a:[], f:[], m:[]};
-    d.idx = new Map(d.a.map((id, i) => [id, i]));
-    return chatCache[videoId] = d;
+  function emptyChat(){ return {a:[], f:[], m:[], idx:new Map(), loaded:false}; }
+  function loadChatters(videoId){ return chatCache[videoId] || (chatCache[videoId] = emptyChat()); }
+  function ensureChatters(videoId){
+    const d = loadChatters(videoId);
+    if(d.loaded) return Promise.resolve(d);
+    if(chatLoading[videoId]) return chatLoading[videoId];
+    return chatLoading[videoId] = (async () => {
+      let raw = null;
+      try{ raw = await idb.get(chatKey(videoId)); }catch(e){ log('チャットデータの読み込みに失敗: ' + e.message); }
+      if(!raw){ // migrate data saved by v1.7–1.8 (localStorage)
+        const old = store.get(chatKey(videoId), null);
+        if(old && old.a){ raw = old; try{ await idb.put(chatKey(videoId), {a:old.a, f:old.f, m:old.m}); localStorage.removeItem(chatKey(videoId)); }catch(e){} }
+      }
+      if(raw && raw.a){
+        // merge anything collected while loading
+        const mem = d.m.slice(), memA = d.a.slice();
+        d.a = raw.a; d.f = raw.f; d.m = raw.m;
+        d.idx = new Map(d.a.map((id, i) => [id, i]));
+        if(mem.length) addChatMessages(videoId, mem.map(x => ({ts:x[0], author:x[1] >= 0 ? memA[x[1]] : null, type:x[2], text:x[3], amount:x[4]})));
+      }
+      d.loaded = true; delete chatLoading[videoId];
+      return d;
+    })();
   }
   function saveChatters(videoId){
     const d = chatCache[videoId]; if(!d) return;
-    try{ localStorage.setItem(chatKey(videoId), JSON.stringify({a:d.a, f:d.f, m:d.m})); }
-    catch(e){ log('チャット投稿者の保存に失敗しました（ブラウザの保存容量が足りない可能性）'); }
+    idb.put(chatKey(videoId), {a:d.a, f:d.f, m:d.m}).catch(e => log('チャットデータの保存に失敗しました（' + e.message + '）'));
   }
-  function deleteChatters(videoId){ delete chatCache[videoId]; try{ localStorage.removeItem(chatKey(videoId)); }catch(e){} }
+  function deleteChatters(videoId){
+    delete chatCache[videoId];
+    idb.del(chatKey(videoId)).catch(() => {});
+    try{ localStorage.removeItem(chatKey(videoId)); }catch(e){}
+  }
   // add messages; returns how many authors were seen for the first time
   function addChatMessages(videoId, msgs){
     const d = loadChatters(videoId); let fresh = 0;
-    for(const {author, ts} of msgs){
-      let i = d.idx.get(author);
-      if(i == null){ i = d.a.length; d.a.push(author); d.f.push(ts); d.idx.set(author, i); fresh++; }
-      else if(ts < d.f[i]) d.f[i] = ts;
-      d.m.push([ts, i]);
+    for(const {author, ts, type, text, amount} of msgs){
+      let i = -1;
+      if(author){
+        i = d.idx.get(author);
+        if(i == null){ i = d.a.length; d.a.push(author); d.f.push(ts); d.idx.set(author, i); fresh++; }
+        else if(ts < d.f[i]) d.f[i] = ts;
+      }
+      const rec = [ts, i, type || 0, text || ''];
+      if(amount) rec.push(amount);
+      d.m.push(rec);
     }
     return fresh;
+  }
+  // unique chatters recounted from the stored messages (same data as the chat CSV)
+  function chatterStats(s){
+    const d = chatCache[s.videoId];
+    if(!d || !d.loaded || !d.a.length) return null;
+    const start = s.actualStart ? Date.parse(s.actualStart) : null;
+    const pre = start ? d.f.filter(t => t < start).length : (s.points.length && s.points.every(isPre) ? d.a.length : 0);
+    return {total: d.a.length, pre};
   }
   // people who wrote in [from, to), and how many of them wrote for the first time in that window
   function chattersBetween(videoId, from, to){
     const d = loadChatters(videoId);
     if(!d.m.length) return null;
     const set = new Set();
-    for(const [ts, i] of d.m) if(ts >= from && ts < to) set.add(i);
+    for(const [ts, i] of d.m) if(i >= 0 && ts >= from && ts < to) set.add(i);
     let fresh = 0; for(const i of set) if(d.f[i] >= from && d.f[i] < to) fresh++;
     const lastTs = d.m[d.m.length - 1][0];
     return {people: set.size, fresh, partial: lastTs < to};
@@ -515,10 +589,12 @@ const APP_VERSION = 'v1.8';
           for(const m of items){
             if(!m.snippet || !CHAT_TYPES.has(m.snippet.type)) continue;
             count++;
-            if(m.snippet.authorChannelId){
-              const ts = Date.parse(m.snippet.publishedAt);
-              msgs.push({author: m.snippet.authorChannelId, ts: isNaN(ts) ? Date.now() : ts});
-            }
+            const sn = m.snippet, ts = Date.parse(sn.publishedAt);
+            const type = sn.type === 'superChatEvent' ? 1 : sn.type === 'superStickerEvent' ? 2 : 0;
+            const text = type === 1 ? ((sn.superChatDetails && sn.superChatDetails.userComment) || '')        // super chat: the viewer's comment only
+                       : type === 2 ? '' : (sn.displayMessage || (sn.textMessageDetails && sn.textMessageDetails.messageText) || '');
+            const amount = (sn.superChatDetails && sn.superChatDetails.amountDisplayString) || (sn.superStickerDetails && sn.superStickerDetails.amountDisplayString) || '';
+            msgs.push({author: sn.authorChannelId || null, ts: isNaN(ts) ? Date.now() : ts, type, text, amount});
           }
         }
         token = r.nextPageToken || token;
@@ -609,6 +685,30 @@ const APP_VERSION = 'v1.8';
     }
     saveBlob(new Blob(['﻿' + csv], {type:'text/csv'}), fileBase(s) + '.csv');
   }
+  const CHAT_TYPE_NAME = ['通常', 'スーパーチャット', 'スーパーステッカー'];
+  function signedHms(ms){
+    const neg = ms < 0; ms = Math.abs(ms);
+    const t = Math.floor(ms / 1000), h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), sec = t % 60;
+    return (neg ? '-' : '') + `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+  }
+  async function downloadChatCsv(s, auto){
+    if(!s) return false;
+    const d = await ensureChatters(s.videoId);
+    if(!d.m.length){ if(!auto) ioMsg('この配信のチャット本文は保存されていません（チャット記録がオフだった、CSVから復元した、v1.8以前に記録した、など）', true); return false; }
+    sendLog('チャットCSV保存', auto ? '自動' : '手動');
+    const t0 = streamStart(s);
+    const q = x => '"' + String(x == null ? '' : x).replace(/"/g, '""') + '"';
+    let csv = '時刻,配信開始からの経過,本文,投稿者番号,メッセージの種類\n';
+    for(const [ts, i, type, text, amount] of d.m.slice().sort((x, y) => x[0] - y[0])){
+      const dt = new Date(ts);
+      const iso = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')} ${dt.toLocaleTimeString('ja-JP')}`;
+      const kind = (CHAT_TYPE_NAME[type || 0] || '通常') + (amount ? ` ${amount}` : '');
+      csv += `${iso},${q(signedHms(ts - t0))},${q(text)},${i >= 0 ? '#' + (i + 1) : ''},${q(kind)}\n`;
+    }
+    saveBlob(new Blob(['﻿' + csv], {type:'text/csv'}), fileBase(s) + '_チャット.csv');
+    return true;
+  }
+
   function summarize(s){
     const all = s.points, t0 = s.actualStart ? Date.parse(s.actualStart) : (all[0] ? all[0][0] : 0);
     const v = all.filter(p => p[1] != null && !isPre(p)), lk = all.filter(p => p[2] != null), ch = all.filter(p => p[3] != null);
@@ -622,6 +722,12 @@ const APP_VERSION = 'v1.8';
       if(r.peak && r.peak[1] > 0) r.uniqRatio = Math.round(r.uniq / r.peak[1] * 1000) / 10;
       const uqPre = uq.filter(isPre);
       if(uqPre.length) r.uniqPre = uqPre[uqPre.length-1][4];
+    }
+    const cs = chatterStats(s);
+    if(cs){
+      r.uniq = cs.total;
+      r.uniqRatio = (r.peak && r.peak[1] > 0) ? Math.round(cs.total / r.peak[1] * 1000) / 10 : undefined;
+      r.uniqPre = all.some(isPre) ? cs.pre : undefined;
     }
     r.hasPre = all.some(isPre);
     return r;
@@ -938,6 +1044,45 @@ const APP_VERSION = 'v1.8';
   window.addEventListener('dragover', e => e.preventDefault());
   window.addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging'); if(e.dataTransfer.files.length) importFiles(e.dataTransfer.files); });
 
+  // ---------- chat search ----------
+  let chatTimer = null;
+  function renderChat(){
+    const list = $('chatList'), cnt = $('chatCount'); list.textContent = '';
+    const s = sessions[viewId];
+    const d = s && chatCache[s.videoId];
+    if(!s){ cnt.textContent = ''; return; }
+    if(!d || !d.loaded){ cnt.textContent = '読み込み中…'; return; }
+    if(!d.m.length){ cnt.textContent = 'この配信のチャット本文はありません'; return; }
+    const words = $('chatQ').value.split(/[\s　、,，]+/).map(w => w.trim()).filter(Boolean);
+    if(!words.length){ cnt.textContent = `チャット 全${fmt(d.m.length)}件（キーワードを入れると絞り込みます）`; return; }
+    const lw = words.map(w => w.toLowerCase());
+    const hits = d.m.filter(r => { const t = (r[3] || '').toLowerCase(); return lw.some(w => t.includes(w)); }).sort((x, y) => x[0] - y[0]);
+    const MAX = 500;
+    cnt.textContent = `${fmt(d.m.length)}件中 ${fmt(hits.length)}件` + (hits.length > MAX ? `（先頭${MAX}件を表示）` : '');
+    const t0 = streamStart(s);
+    const re = new RegExp('(' + words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')', 'gi');
+    const frag = document.createDocumentFragment();
+    for(const [ts, i, type, text, amount] of hits.slice(0, MAX)){
+      const row = document.createElement('div'); row.className = 'chat-item';
+      const ct = document.createElement('span'); ct.className = 'ct';
+      const a = document.createElement('a'); a.href = archiveUrl(s, ts - 15000); a.target = '_blank'; a.rel = 'noopener';
+      a.title = 'アーカイブをこの書き込みの15秒前から開く'; a.textContent = hms(ts); ct.appendChild(a);
+      const ce = document.createElement('span'); ce.className = 'ce'; ce.textContent = elapsedLabel(ts - t0);
+      const ca = document.createElement('span'); ca.className = 'ca'; ca.textContent = i >= 0 ? '#' + (i + 1) : '';
+      const cx = document.createElement('span'); cx.className = 'cx';
+      String(text || '').split(re).forEach((part, k) => {
+        if(k % 2){ const mk = document.createElement('mark'); mk.textContent = part; cx.appendChild(mk); }
+        else if(part) cx.appendChild(document.createTextNode(part));
+      });
+      row.append(ct, ce, ca, cx);
+      if(type){ const cb = document.createElement('span'); cb.className = 'cb'; cb.textContent = (CHAT_TYPE_NAME[type] || '') + (amount ? ' ' + amount : ''); row.appendChild(cb); }
+      frag.appendChild(row);
+    }
+    list.appendChild(frag);
+  }
+  $('chatQ').addEventListener('input', () => { clearTimeout(chatTimer); chatTimer = setTimeout(renderChat, 150); });
+  $('btnChatCsv').onclick = () => downloadChatCsv(sessions[viewId], false);
+
   // ---------- chart ----------
   const cv = $('chart'), ctx = cv.getContext('2d'), tip = $('tip');
   let geom = null;
@@ -990,6 +1135,11 @@ const APP_VERSION = 'v1.8';
     draw(all);
     renderMemos();
     renderViewInfo();
+    renderChat();
+    if(s && !(chatCache[s.videoId] && chatCache[s.videoId].loaded)){
+      const vid = s.videoId;
+      ensureChatters(vid).then(() => { if(viewId === vid) render(); });
+    }
   }
 
   function niceStep(max){
