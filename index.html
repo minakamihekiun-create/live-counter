@@ -35,7 +35,7 @@
   .meta{margin-top:8px;font-size:13px;color:var(--muted)}
   .meta b{color:var(--text);font-weight:600}
   .meta a{color:var(--accent2)}
-  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:10px;margin-bottom:16px}
   .stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
   .stat .k{font-size:11px;color:var(--muted)}
   .stat .v{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
@@ -78,6 +78,7 @@
   .memo-item .mt a:hover{text-decoration:underline}
   .memo-item .me{color:var(--muted);font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums;min-width:96px}
   .memo-item .mx{flex:1;word-break:break-word}
+  .memo-item .mc{color:#4da3ff;font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums}
   .memo-item .md{background:none;border:none;color:var(--muted);font-size:16px;padding:0 6px;line-height:1}
   .memo-item .md:hover{color:#ff3b3b;background:none}
   .memo-item .out{color:var(--warn);font-size:11px;margin-left:6px}
@@ -96,6 +97,7 @@
     <div class="row" style="margin-top:10px">
       <div class="f-num"><label>記録間隔（秒）</label><input id="pollSec" type="number" min="15" value="60"></div>
       <div class="f-num"><label>配信検知間隔（分）</label><input id="detectMin" type="number" min="1" value="2"></div>
+      <div class="f-num"><label>開始前の記録（分前から）</label><input id="preMin" type="number" min="0" value="10" title="チャンネル監視中、配信予定時刻の何分前から記録を始めるか（0で開始前は記録しない）"></div>
       <label class="chk"><input type="checkbox" id="chatOn" checked> チャットの勢いも記録 <small>（枠の消費 約6倍）</small></label>
       <label class="chk"><input type="checkbox" id="autoSave" checked> 配信終了時にCSVと画像を自動保存</label>
       <div style="flex:1"></div>
@@ -112,6 +114,7 @@
     <div class="stat"><div class="k">平均</div><div class="v" id="sAvg">–</div><div class="s">&nbsp;</div></div>
     <div class="stat"><div class="k">高評価</div><div class="v" id="sLike">–</div><div class="s" id="sLikeT">&nbsp;</div></div>
     <div class="stat"><div class="k">チャット勢い（件/分）</div><div class="v" id="sChat">–</div><div class="s" id="sChatT">&nbsp;</div></div>
+    <div class="stat"><div class="k">チャットした人数</div><div class="v" id="sUniq">–</div><div class="s" id="sUniqT">&nbsp;</div></div>
     <div class="stat"><div class="k">記録数 / 経過</div><div class="v" id="sCount">–</div><div class="s" id="sElapsed">&nbsp;</div></div>
   </div>
 
@@ -147,6 +150,8 @@
         ・APIキーは管理者が設定済みです。1日の無料枠（10,000ユニット）を利用者全員で共有しているので、使わないときは「停止」を押してください。<br>
         ・枠の消費の目安（60秒間隔）：同接・高評価だけなら1時間 約60ユニット、チャットの勢いも記録すると1時間 約360ユニットです（1日の無料枠は10,000）。<br>
         ・チャットの勢いは、前回の記録から今回までに投稿されたコメント数を「1分あたり」に換算した値です。記録開始直後の1回目は空欄になります。チャットがオフやメンバー限定の配信では記録されません。<br>
+        ・チャットした人数は、記録を始めてからチャットに書き込んだ人を、同じ人の重複を除いて数えた人数です（「チャットの勢いも記録」がオンのときだけ数えます）。記録開始より前の書き込みは含みません。数えるために投稿者のチャンネルIDだけをこのブラウザに保存しています（名前やコメント本文は保存しません）。<br>
+        ・配信開始前（待機所）のチャットも記録します。チャンネル監視中は配信予定時刻の「開始前の記録」分前から、配信URLを入れた場合は監視スタートを押した時点から記録します。開始前の同接（待機人数）は、YouTubeが値を返したときだけ記録します（返さないことが多いです）。開始前の値はグラフの線・ピーク・平均には含めず、ツールチップとCSVにだけ出します。<br>
         ・PCがスリープしたりタブを閉じたりすると記録が止まります。記録したデータはこのブラウザに保存されるので、再読み込みしても残ります。<br>
         ・配信者が視聴者数を非表示にしている配信は取得できません（空欄で記録されます）。<br>
         ・チャンネル指定で検知が遅いときは、配信URLを直接貼ると確実です。<br>
@@ -154,6 +159,8 @@
       </div>
       <div class="history">
         <b>更新履歴</b><br>
+        v1.8　配信開始前（待機所）のチャットを記録、グラフに開始前の区間を表示<br>
+        v1.7　チャットした人数（同じ人の重複を除いた人数）を追加<br>
         v1.6　管理用の操作ログを追加<br>
         v1.5　CSVから復元（グラフ・メモ・チャンネル情報・アーカイブへのジャンプを再現）<br>
         v1.4　メモ機能、グラフやメモからアーカイブへジャンプ<br>
@@ -176,7 +183,7 @@ const BUILTIN_API_KEY = 'AIzaSyAZem8SqBtG-7wd69W0mSw6cY_Hz6VfE00';
 // 空のままにすると、操作ログは送信されません。
 const LOG_ENDPOINT = 'https://script.google.com/macros/s/AKfycbzKgj8mq0bBv7Qzez0kmgB0kpBTnTec54G42Qi8gtboluL3fYs931EqLDKSbWTjxrlKzw/exec';
 // ======================
-const APP_VERSION = 'v1.6';
+const APP_VERSION = 'v1.8';
 (() => {
   // ---------- usage log (anonymous) ----------
   // 送るのは「匿名の利用者ID・操作の種類・数字だけの詳細・バージョン」のみ。チャンネル名・動画・タイトルは送らない。
@@ -218,6 +225,7 @@ const APP_VERSION = 'v1.6';
   $('target').value = store.get('ytlv_target', '');
   $('pollSec').value = store.get('ytlv_poll', 60);
   $('detectMin').value = store.get('ytlv_detect', 2);
+  $('preMin').value = store.get('ytlv_pre', 10);
   $('chatOn').checked = store.get('ytlv_chat', true);
   $('chatOn').onchange = () => store.set('ytlv_chat', $('chatOn').checked);
   $('autoSave').checked = store.get('ytlv_auto', true);
@@ -276,6 +284,8 @@ const APP_VERSION = 'v1.6';
     return null;
   }
 
+  const isPre = p => p[6] === 1;   // recorded before the stream started (waiting room)
+
   // ---------- control ----------
   function schedule(fn, ms){ clearTimeout(timer); if(running) timer = setTimeout(fn, ms); }
 
@@ -286,14 +296,14 @@ const APP_VERSION = 'v1.6';
     if(!t){ setStatus('err','チャンネルまたは配信URLの形式を読み取れませんでした'); return; }
     if(!builtinKey) store.set('ytlv_key', key);
     store.set('ytlv_target', $('target').value.trim());
-    store.set('ytlv_poll', +$('pollSec').value); store.set('ytlv_detect', +$('detectMin').value);
+    store.set('ytlv_poll', +$('pollSec').value); store.set('ytlv_detect', +$('detectMin').value); store.set('ytlv_pre', Math.max(0, +$('preMin').value || 0));
     running = true; $('btnStart').disabled = true; $('btnStop').disabled = false;
     $('meta').innerHTML = '';
     sendLog('監視開始', `${t.type === 'video' ? '配信URL指定' : 'チャンネル指定'} / 記録間隔${Math.max(15, +$('pollSec').value || 60)}秒 / チャット${$('chatOn').checked ? 'ON' : 'OFF'}`);
     try{
       if(t.type === 'video'){
         mode = 'video'; channel = null;
-        await beginRecording(t.id);
+        await beginRecording(t.id, '配信URLを指定');
       } else {
         mode = 'channel';
         const p = {part:'snippet,contentDetails'};
@@ -343,8 +353,17 @@ const APP_VERSION = 'v1.6';
       }
       if(live){
         log(`ライブ検知: ${live.snippet.title}`);
-        await beginRecording(live.id);
+        await beginRecording(live.id, 'ライブを自動検知');
         return;
+      }
+      const preMin = Math.max(0, +$('preMin').value || 0);
+      if(preMin > 0 && upcoming && upcoming.liveStreamingDetails && upcoming.liveStreamingDetails.scheduledStartTime){
+        const until = Date.parse(upcoming.liveStreamingDetails.scheduledStartTime) - Date.now();
+        if(until <= preMin * 60000){
+          log(`配信予定枠を検知（予定 ${hm(Date.now() + until)}）: ${upcoming.snippet.title}。開始前から記録します`);
+          await beginRecording(upcoming.id, '配信予定枠を検知（開始前から）');
+          return;
+        }
       }
       let up = '';
       if(upcoming && upcoming.liveStreamingDetails && upcoming.liveStreamingDetails.scheduledStartTime){
@@ -360,7 +379,7 @@ const APP_VERSION = 'v1.6';
     }
   }
 
-  async function beginRecording(videoId){
+  async function beginRecording(videoId, how){
     const j = await yt('videos', {part:'snippet,liveStreamingDetails', id:videoId});
     if(!j.items || !j.items.length) throw new Error('動画が見つかりませんでした');
     const it = j.items[0];
@@ -378,10 +397,10 @@ const APP_VERSION = 'v1.6';
     }
     if(!s.channelId) s.channelId = it.snippet.channelId;
     current = s; viewId = videoId; save(); refreshSelect();
-    sendLog('記録開始', mode === 'channel' ? 'ライブを自動検知' : '配信URLを指定');
+    sendLog('記録開始', how || '');
     $('meta').innerHTML = `<b>${esc(s.title)}</b> ／ ${esc(s.channelTitle)} ／ <a href="https://www.youtube.com/watch?v=${videoId}" target="_blank" rel="noopener">配信を開く</a>`;
     if(it.snippet.liveBroadcastContent === 'upcoming'){
-      setStatus('watch', '配信開始前です。始まったら記録を開始します');
+      setStatus('watch', '配信開始前です。待機所のチャットから記録を始めます');
     }
     poll();
   }
@@ -392,22 +411,26 @@ const APP_VERSION = 'v1.6';
     try{
       const j = await yt('videos', {part:'snippet,liveStreamingDetails,statistics', id:current.videoId});
       const it = j.items && j.items[0];
-      if(!it) throw new Error('動画を取得できませんでした');
-      const lsd = it.liveStreamingDetails || {};
-      const st = it.snippet.liveBroadcastContent;
+      const lsd = it ? (it.liveStreamingDetails || {}) : {};
+      const st = it ? it.snippet.liveBroadcastContent : 'none';   // video removed / made private -> treat as ended
+      if(!it) log('配信枠が見つからなくなりました（削除・非公開の可能性）');
       if(lsd.actualStartTime) current.actualStart = lsd.actualStartTime;
-      if(st === 'live'){
+      if(lsd.scheduledStartTime) current.scheduledStart = lsd.scheduledStartTime;
+      if(st === 'live' || st === 'upcoming'){
+        const pre = st === 'upcoming';
         const v = lsd.concurrentViewers != null ? Number(lsd.concurrentViewers) : null;
         const likes = (it.statistics && it.statistics.likeCount != null) ? Number(it.statistics.likeCount) : null;
         let chat = null;
-        if($('chatOn').checked && lsd.activeLiveChatId) chat = await pollChat(lsd.activeLiveChatId);
+        if($('chatOn').checked && lsd.activeLiveChatId) chat = await pollChat(lsd.activeLiveChatId, current.videoId);
         else chatState = null;
-        current.points.push([Date.now(), v, likes, chat]);
+        current.points.push([Date.now(), v, likes, chat ? chat.rate : null, chat ? chat.total : null, chat ? chat.fresh : null, pre ? 1 : 0]);
         save(); if(current.points.length === 1) refreshSelect(); else if(viewId === current.videoId) render();
-        setStatus('rec', `記録中：${fmt(v)} 人（次の取得 ${hms(Date.now()+ms)}）`);
-        schedule(poll, ms);
-      } else if(st === 'upcoming'){
-        setStatus('watch', '配信開始前…（開始を待っています）');
+        if(pre){
+          const sch = current.scheduledStart ? `（予定 ${hm(Date.parse(current.scheduledStart))}）` : '';
+          setStatus('rec', `開始前を記録中${sch}：チャット ${chat ? fmt(chat.rate) + '件/分' : '–'}` + (v != null ? `／待機 ${fmt(v)}人` : '') + `（次の取得 ${hms(Date.now()+ms)}）`);
+        } else {
+          setStatus('rec', `記録中：${fmt(v)} 人（次の取得 ${hms(Date.now()+ms)}）`);
+        }
         schedule(poll, ms);
       } else {
         log(`配信終了: ${current.title}（${current.points.length}件記録）`);
@@ -436,26 +459,77 @@ const APP_VERSION = 'v1.6';
   let chatState = null; // {chatId, token, lastTs, stopped}
   const CHAT_TYPES = new Set(['textMessageEvent','superChatEvent','superStickerEvent']);
   const CHAT_FATAL = new Set(['liveChatDisabled','liveChatNotFound','forbidden','liveChatEnded','insufficientPermissions']);
-  async function pollChat(chatId){
+  // chatters: per stream, saved separately as {a:[authorChannelId...], f:[firstTs...], m:[[ts, authorIndex]...]}
+  // only channel IDs and times are kept (no names, no message text)
+  const chatCache = {};
+  function chatKey(videoId){ return 'ytlv_chatters_' + videoId; }
+  function loadChatters(videoId){
+    if(chatCache[videoId]) return chatCache[videoId];
+    const raw = store.get(chatKey(videoId), null);
+    const d = raw && raw.a ? raw : {a:[], f:[], m:[]};
+    d.idx = new Map(d.a.map((id, i) => [id, i]));
+    return chatCache[videoId] = d;
+  }
+  function saveChatters(videoId){
+    const d = chatCache[videoId]; if(!d) return;
+    try{ localStorage.setItem(chatKey(videoId), JSON.stringify({a:d.a, f:d.f, m:d.m})); }
+    catch(e){ log('チャット投稿者の保存に失敗しました（ブラウザの保存容量が足りない可能性）'); }
+  }
+  function deleteChatters(videoId){ delete chatCache[videoId]; try{ localStorage.removeItem(chatKey(videoId)); }catch(e){} }
+  // add messages; returns how many authors were seen for the first time
+  function addChatMessages(videoId, msgs){
+    const d = loadChatters(videoId); let fresh = 0;
+    for(const {author, ts} of msgs){
+      let i = d.idx.get(author);
+      if(i == null){ i = d.a.length; d.a.push(author); d.f.push(ts); d.idx.set(author, i); fresh++; }
+      else if(ts < d.f[i]) d.f[i] = ts;
+      d.m.push([ts, i]);
+    }
+    return fresh;
+  }
+  // people who wrote in [from, to), and how many of them wrote for the first time in that window
+  function chattersBetween(videoId, from, to){
+    const d = loadChatters(videoId);
+    if(!d.m.length) return null;
+    const set = new Set();
+    for(const [ts, i] of d.m) if(ts >= from && ts < to) set.add(i);
+    let fresh = 0; for(const i of set) if(d.f[i] >= from && d.f[i] < to) fresh++;
+    const lastTs = d.m[d.m.length - 1][0];
+    return {people: set.size, fresh, partial: lastTs < to};
+  }
+
+  async function pollChat(chatId, videoId){
     if(!chatState || chatState.chatId !== chatId) chatState = {chatId, token:null, lastTs:null, stopped:false};
     if(chatState.stopped) return null;
     try{
       const first = !chatState.token;
       let token = chatState.token, count = 0, pages = 0;
+      const msgs = [];
       while(true){
         const p = {liveChatId:chatId, part:'snippet', maxResults:2000};
         if(token) p.pageToken = token;
         const r = await yt('liveChat/messages', p, 5);
         pages++;
         const items = r.items || [];
-        if(!first) count += items.filter(m => m.snippet && CHAT_TYPES.has(m.snippet.type)).length;
+        if(!first){
+          for(const m of items){
+            if(!m.snippet || !CHAT_TYPES.has(m.snippet.type)) continue;
+            count++;
+            if(m.snippet.authorChannelId){
+              const ts = Date.parse(m.snippet.publishedAt);
+              msgs.push({author: m.snippet.authorChannelId, ts: isNaN(ts) ? Date.now() : ts});
+            }
+          }
+        }
         token = r.nextPageToken || token;
         if(first || items.length < 2000 || pages >= 3) break;
       }
       const now = Date.now(), prev = chatState.lastTs;
       chatState.token = token; chatState.lastTs = now;
       if(first || !prev) return null;
-      return Math.round(count / ((now - prev) / 60000) * 10) / 10;
+      const fresh = addChatMessages(videoId, msgs);
+      saveChatters(videoId);
+      return {rate: Math.round(count / ((now - prev) / 60000) * 10) / 10, total: loadChatters(videoId).a.length, fresh};
     }catch(e){
       if(CHAT_FATAL.has(e.reason)){
         chatState.stopped = true;
@@ -493,7 +567,7 @@ const APP_VERSION = 'v1.6';
     if(current && current.videoId === viewId){ setStatus('err','記録中のデータは削除できません。先に停止してください'); return; }
     const b = $('btnDel');
     if(b.dataset.confirm !== viewId){ b.dataset.confirm = viewId; b.textContent = 'もう一度押すと削除'; setTimeout(() => { b.dataset.confirm=''; b.textContent='この記録を削除'; }, 3000); return; }
-    delete sessions[viewId]; save(); viewId = null; sendLog('記録を削除'); b.dataset.confirm=''; b.textContent='この記録を削除'; refreshSelect();
+    deleteChatters(viewId); delete sessions[viewId]; save(); viewId = null; sendLog('記録を削除'); b.dataset.confirm=''; b.textContent='この記録を削除'; refreshSelect();
   };
 
   function fileBase(s){
@@ -511,7 +585,7 @@ const APP_VERSION = 'v1.6';
     if(!s || !s.points.length) return;
     sendLog('CSV保存', auto ? '自動' : '手動');
     const t0 = s.actualStart ? Date.parse(s.actualStart) : s.points[0][0];
-    let csv = '時刻,配信開始からの経過(分),同時視聴者数,高評価数,チャット(件/分),メモ,メモ時刻,動画URL,タイトル,チャンネル,チャンネルURL,配信開始\n';
+    let csv = '時刻,区分,配信開始からの経過(分),同時視聴者数,高評価数,チャット(件/分),チャット人数(累計),新規チャット人数,メモ,メモ時刻,動画URL,タイトル,チャンネル,チャンネルURL,配信開始\n';
     const cell = x => x == null ? '' : x;
     const q = x => x ? '"' + String(x).replace(/"/g, '""') + '"' : '';
     // assign each memo to the row with the nearest time
@@ -526,21 +600,30 @@ const APP_VERSION = 'v1.6';
       s.channelId ? `https://www.youtube.com/channel/${s.channelId}` : '', s.actualStart || ''
     ].map(q).join(',');
     for(let i = 0; i < s.points.length; i++){
-      const [ts, v, lk, ch] = s.points[i];
+      const [ts, v, lk, ch, uq, nw] = s.points[i];
+      const phase = isPre(s.points[i]) ? '開始前' : '配信中';
       const d = new Date(ts);
       const iso = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${d.toLocaleTimeString('ja-JP')}`;
       const ms = memoAt[i] || [];
-      csv += `${iso},${((ts - t0)/60000).toFixed(1)},${cell(v)},${cell(lk)},${cell(ch)},${q(ms.map(m => m.text).join(' / '))},${q(ms.map(m => hms(m.ts)).join(' / '))},${i === 0 ? meta : ',,,,'}\n`;
+      csv += `${iso},${phase},${((ts - t0)/60000).toFixed(1)},${cell(v)},${cell(lk)},${cell(ch)},${cell(uq)},${cell(nw)},${q(ms.map(m => m.text).join(' / '))},${q(ms.map(m => hms(m.ts)).join(' / '))},${i === 0 ? meta : ',,,,'}\n`;
     }
     saveBlob(new Blob(['﻿' + csv], {type:'text/csv'}), fileBase(s) + '.csv');
   }
   function summarize(s){
     const all = s.points, t0 = s.actualStart ? Date.parse(s.actualStart) : (all[0] ? all[0][0] : 0);
-    const v = all.filter(p => p[1] != null), lk = all.filter(p => p[2] != null), ch = all.filter(p => p[3] != null);
+    const v = all.filter(p => p[1] != null && !isPre(p)), lk = all.filter(p => p[2] != null), ch = all.filter(p => p[3] != null);
     const r = {t0};
     if(v.length){ r.peak = v.reduce((a,p) => p[1] > a[1] ? p : a); r.avg = Math.round(v.reduce((a,p) => a + p[1], 0) / v.length); }
     if(lk.length){ r.likeLast = lk[lk.length-1][2]; r.likeGain = lk[lk.length-1][2] - lk[0][2]; }
     if(ch.length){ r.chatPeak = ch.reduce((a,p) => p[3] > a[3] ? p : a); r.chatAvg = Math.round(ch.reduce((a,p) => a + p[3], 0) / ch.length * 10) / 10; }
+    const uq = all.filter(p => p[4] != null);
+    if(uq.length){
+      r.uniq = uq[uq.length-1][4];
+      if(r.peak && r.peak[1] > 0) r.uniqRatio = Math.round(r.uniq / r.peak[1] * 1000) / 10;
+      const uqPre = uq.filter(isPre);
+      if(uqPre.length) r.uniqPre = uqPre[uqPre.length-1][4];
+    }
+    r.hasPre = all.some(isPre);
     return r;
   }
   function downloadPng(s, auto){
@@ -566,9 +649,10 @@ const APP_VERSION = 'v1.6';
       ['ピーク同接', sm.peak ? fmt(sm.peak[1]) + ' 人' : '–', sm.peak ? `${hm(sm.peak[0])}（開始${dur(sm.peak[0]-sm.t0)}後）` : ''],
       ['平均同接', sm.avg != null ? fmt(sm.avg) + ' 人' : '–', ''],
       ['高評価', sm.likeLast != null ? fmt(sm.likeLast) : '–', sm.likeGain != null ? `記録中に +${fmt(sm.likeGain)}` : ''],
-      ['チャット勢い ピーク', sm.chatPeak ? fmt(sm.chatPeak[3]) + ' 件/分' : '–', sm.chatPeak ? `${hm(sm.chatPeak[0])}／平均 ${fmt(sm.chatAvg)} 件/分` : '']
+      ['チャット勢い ピーク', sm.chatPeak ? fmt(sm.chatPeak[3]) + ' 件/分' : '–', sm.chatPeak ? `${hm(sm.chatPeak[0])}／平均 ${fmt(sm.chatAvg)} 件/分` : ''],
+      ['チャットした人数', sm.uniq != null ? fmt(sm.uniq) + ' 人' : '–', [sm.uniqRatio != null ? `同接ピークの ${sm.uniqRatio}%` : '', sm.uniqPre != null ? `開始前 ${fmt(sm.uniqPre)}人` : ''].filter(Boolean).join('／')]
     ];
-    const bw = (W - 80 - 3*14) / 4;
+    const bw = (W - 80 - (boxes.length-1)*14) / boxes.length;
     boxes.forEach(([k, v, sub], i) => {
       const x = 40 + i*(bw + 14), y = 104;
       g.fillStyle = '#171a21'; g.strokeStyle = '#2a2f3a'; g.lineWidth = 1;
@@ -583,9 +667,10 @@ const APP_VERSION = 'v1.6';
     g.fillStyle = '#ff4d5e'; g.fillRect(44, 214, 16, 3);
     g.fillStyle = '#8b93a7'; g.fillText('同時視聴者数（左軸）', 66, 207);
     if(sec){ g.fillStyle = '#4da3ff'; g.fillRect(230, 214, 16, 3); g.fillStyle = '#8b93a7'; g.fillText(sec.name, 252, 207); }
+    if(sm.hasPre){ g.fillStyle = 'rgba(77,163,255,.18)'; g.fillRect(470, 209, 16, 12); g.fillStyle = '#8b93a7'; g.fillText('配信開始前（待機所）', 492, 207); }
     // chart
     g.save(); g.translate(30, 236);
-    drawChart(g, W - 60, H - 236 - 34, all, sortedMemos(s));
+    drawChart(g, W - 60, H - 236 - 34, all, sortedMemos(s), s.actualStart ? Date.parse(s.actualStart) : null);
     g.restore();
     g.fillStyle = '#5a6172'; g.font = `11px ${font}`; g.textAlign = 'right';
     g.fillText('YouTubeライブ 同接レコーダー', W - 30, H - 22);
@@ -673,7 +758,13 @@ const APP_VERSION = 'v1.6';
         const i = s.memos.indexOf(m); if(i >= 0) s.memos.splice(i, 1);
         save(); render(); memoMsg('メモを削除しました'); sendLog('メモ削除');
       };
-      row.append(mt, me, mx, del); box.appendChild(row);
+      const w = chattersBetween(s.videoId, m.ts, m.ts + 120000);
+      const mc = document.createElement('span'); mc.className = 'mc';
+      if(w){
+        mc.textContent = `2分間 ${fmt(w.people)}人（初 ${fmt(w.fresh)}人）` + (w.partial ? ' 集計中' : '');
+        mc.title = 'メモの時刻から2分間にチャットした人数（うち、その2分間に初めて書き込んだ人数）';
+      }
+      row.append(mt, me, mx, mc, del); box.appendChild(row);
     }
   }
 
@@ -733,7 +824,7 @@ const APP_VERSION = 'v1.6';
     if(rows.length < 2) throw new Error('データの行がありません');
     const head = rows[0].map(h => h.trim());
     const col = name => head.indexOf(name);
-    const cT = col('時刻'), cE = col('配信開始からの経過(分)'), cV = col('同時視聴者数'), cL = col('高評価数'), cC = col('チャット(件/分)'),
+    const cT = col('時刻'), cE = col('配信開始からの経過(分)'), cV = col('同時視聴者数'), cL = col('高評価数'), cC = col('チャット(件/分)'), cU1 = col('チャット人数(累計)'), cU2 = col('新規チャット人数'), cPh = col('区分'),
           cM = col('メモ'), cMT = col('メモ時刻'), cU = col('動画URL'), cTi = col('タイトル'), cCh = col('チャンネル'), cCU = col('チャンネルURL'), cS = col('配信開始');
     if(cT < 0 || cV < 0) throw new Error('同接レコーダーのCSVではないようです（「時刻」「同時視聴者数」の列がありません）');
     const body = rows.slice(1), first = body[0];
@@ -752,7 +843,9 @@ const APP_VERSION = 'v1.6';
     for(const r of body){
       const ts = parseDateTime(get(r, cT));
       if(ts == null) continue;
-      points.push([ts, num(get(r, cV)), cL >= 0 ? num(get(r, cL)) : null, cC >= 0 ? num(get(r, cC)) : null]);
+      points.push([ts, num(get(r, cV)), cL >= 0 ? num(get(r, cL)) : null, cC >= 0 ? num(get(r, cC)) : null,
+        cU1 >= 0 ? num(get(r, cU1)) : null, cU2 >= 0 ? num(get(r, cU2)) : null,
+        cPh >= 0 ? (get(r, cPh) === '開始前' ? 1 : 0) : 0]);
       const el = cE >= 0 ? num(get(r, cE)) : null;
       if(startFromElapsed == null && el != null) startFromElapsed = ts - el * 60000;
       const mtext = get(r, cM);
@@ -852,7 +945,7 @@ const APP_VERSION = 'v1.6';
   function render(){
     const s = sessions[viewId];
     const all = s ? s.points : [];
-    const pts = all.filter(p => p[1] != null);
+    const pts = all.filter(p => p[1] != null && !isPre(p));
     const likesPts = all.filter(p => p[2] != null);
     const chatPts = all.filter(p => p[3] != null);
     const t0 = s ? (s.actualStart ? Date.parse(s.actualStart) : (all[0] ? all[0][0] : 0)) : 0;
@@ -880,6 +973,15 @@ const APP_VERSION = 'v1.6';
       $('sChat').textContent = fmt(chatPts[chatPts.length-1][3]);
       $('sChatT').textContent = `ピーク ${fmt(pk[3])}（${hm(pk[0])}）`;
     } else { $('sChat').textContent = '–'; $('sChatT').innerHTML = '&nbsp;'; }
+    // unique chatters
+    const sm = s ? summarize(s) : {};
+    if(sm.uniq != null){
+      $('sUniq').textContent = fmt(sm.uniq);
+      const subs = [];
+      if(sm.uniqRatio != null) subs.push(`同接ピークの ${sm.uniqRatio}%`);
+      if(sm.uniqPre != null) subs.push(`うち開始前 ${fmt(sm.uniqPre)}人`);
+      $('sUniqT').textContent = subs.length ? subs.join('／') : '\u00a0';
+    } else { $('sUniq').textContent = '–'; $('sUniqT').innerHTML = '&nbsp;'; }
     // count
     if(all.length){
       $('sCount').textContent = all.length;
@@ -901,12 +1003,12 @@ const APP_VERSION = 'v1.6';
     cv.width = W*dpr; cv.height = H*dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
     ctx.clearRect(0,0,W,H);
     const sv = sessions[viewId];
-    geom = drawChart(ctx, W, H, all, sv ? sortedMemos(sv) : []);
+    geom = drawChart(ctx, W, H, all, sv ? sortedMemos(sv) : [], sv && sv.actualStart ? Date.parse(sv.actualStart) : null);
   }
 
-  function drawChart(c, W, H, all, memos = []){
+  function drawChart(c, W, H, all, memos = [], startTs = null){
     const sec = SEC[secMode];
-    const vPts = all.filter(p => p[1] != null);
+    const vPts = all.filter(p => p[1] != null && !isPre(p));   // waiting-room count is not drawn (tooltip/CSV only)
     const sPts = sec ? all.filter(p => p[sec.idx] != null) : [];
     const L = 58, R = sec ? 58 : 16, T = 14, B = 30;
     c.font = '11px system-ui, sans-serif';
@@ -945,6 +1047,21 @@ const APP_VERSION = 'v1.6';
     const stepMin = cand.find(c => spanMin / c <= 8) || 720;
     const first = Math.ceil(x0 / (stepMin*60000)) * stepMin*60000;
     for(let t = first; t <= x1; t += stepMin*60000) c.fillText(hm(t), X(t), H-B+8);
+    // pre-start (waiting room) region + start line
+    const prePts = all.filter(isPre);
+    if(prePts.length){
+      const endTs = startTs && startTs > x0 ? Math.min(startTs, x1) : prePts[prePts.length-1][0];
+      const xa = L, xb = Math.max(L, Math.min(W - R, X(endTs)));
+      c.fillStyle = 'rgba(77,163,255,.08)'; c.fillRect(xa, T, xb - xa, H - T - B);
+      c.save(); c.fillStyle = 'rgba(139,147,167,.9)'; c.font = '11px system-ui, sans-serif'; c.textAlign = 'left'; c.textBaseline = 'bottom';
+      if(xb - xa > 60) c.fillText('開始前（待機所）', xa + 6, H - B - 4);
+      if(startTs && startTs >= x0 && startTs <= x1){
+        c.strokeStyle = 'rgba(232,234,240,.55)'; c.lineWidth = 1; c.setLineDash([2, 3]);
+        c.beginPath(); c.moveTo(Math.round(xb) + .5, T); c.lineTo(Math.round(xb) + .5, H - B); c.stroke(); c.setLineDash([]);
+        c.fillStyle = '#e8eaf0'; c.textBaseline = 'top'; c.fillText('配信開始 ' + hm(startTs), xb + 4, H - B - 18);
+      }
+      c.restore();
+    }
     // viewers area + line
     if(vPts.length){
       const grad = c.createLinearGradient(0,T,0,H-B);
@@ -954,8 +1071,11 @@ const APP_VERSION = 'v1.6';
       c.lineTo(X(vPts[vPts.length-1][0]), Y(0)); c.closePath(); c.fillStyle = grad; c.fill();
       c.beginPath(); vPts.forEach((p,i) => i ? c.lineTo(X(p[0]),Y(p[1])) : c.moveTo(X(p[0]),Y(p[1])));
       c.strokeStyle = '#ff4d5e'; c.lineWidth = 2; c.lineJoin = 'round'; c.stroke();
-      let pk = vPts[0]; for(const p of vPts) if(p[1] > pk[1]) pk = p;
-      c.fillStyle = '#ff4d5e'; c.beginPath(); c.arc(X(pk[0]), Y(pk[1]), 4, 0, Math.PI*2); c.fill();
+      const livePts = vPts.filter(p => !isPre(p));
+      if(livePts.length){
+        let pk = livePts[0]; for(const p of livePts) if(p[1] > pk[1]) pk = p;
+        c.fillStyle = '#ff4d5e'; c.beginPath(); c.arc(X(pk[0]), Y(pk[1]), 4, 0, Math.PI*2); c.fill();
+      }
     }
     // secondary line
     if(Y2){
@@ -998,7 +1118,7 @@ const APP_VERSION = 'v1.6';
     for(const p of geom.all){ const d = Math.abs(geom.X(p[0]) - mx); if(d < bd){ bd = d; best = p; } }
     if(!best || bd > 40){ tip.style.display = 'none'; return; }
     tip.style.display = 'block';
-    let txt = `${hms(best[0])}　同接 ${fmt(best[1])} 人`;
+    let txt = isPre(best) ? `${hms(best[0])}　開始前` + (best[1] != null ? `（待機 ${fmt(best[1])} 人）` : '') : `${hms(best[0])}　同接 ${fmt(best[1])} 人`;
     if(best[2] != null) txt += `　高評価 ${fmt(best[2])}`;
     if(best[3] != null) txt += `　チャット ${fmt(best[3])}件/分`;
     tip.textContent = '';
@@ -1007,7 +1127,7 @@ const APP_VERSION = 'v1.6';
     hintEl.style.cssText = 'color:#8b93a7;font-size:11px';
     hintEl.textContent = 'クリックでアーカイブへ（この1分間の始まりから再生）';
     tip.appendChild(hintEl);
-    const px = geom.X(best[0]), py = best[1] != null ? geom.Y(best[1]) : 40;
+    const px = geom.X(best[0]), py = (best[1] != null && !isPre(best)) ? geom.Y(best[1]) : 40;
     tip.style.left = Math.max(0, Math.min(px + 10, r.width - tip.offsetWidth - 4)) + 'px';
     tip.style.top = Math.max(py - 34, 0) + 'px';
   });
