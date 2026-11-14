@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>YouTube キーワード調査 v1.0</title>
+<title>YouTube キーワード調査 v1.1</title>
 <style>
 :root{
   --bg:#f6f4ef; --card:#ffffff; --ink:#1f2a2e; --sub:#5f6b70; --line:#dcd8cf;
@@ -63,7 +63,7 @@ details summary{cursor:pointer;color:var(--ink)}
 </head>
 <body>
 <main>
-  <h1>YouTube キーワード調査 <small style="font-size:12px;color:var(--sub)">v1.0</small></h1>
+  <h1>YouTube キーワード調査 <small style="font-size:12px;color:var(--sub)">v1.1</small></h1>
   <p class="lead">検索されている言葉（サジェスト）と、その言葉で最近伸びている動画を調べます。</p>
 
   <div class="card">
@@ -114,6 +114,12 @@ details summary{cursor:pointer;color:var(--ink)}
         <option value="short">3分以内</option>
         <option value="long">3分より長い</option>
       </select>
+      <select id="minViews" aria-label="再生数の下限">
+        <option value="0">再生数の下限なし</option>
+        <option value="1000" selected>1,000回以上</option>
+        <option value="10000">1万回以上</option>
+        <option value="100000">10万回以上</option>
+      </select>
       <button id="reSearch">この期間で再検索</button>
       <button id="copyCsv">CSVをコピー</button>
     </div>
@@ -124,7 +130,7 @@ details summary{cursor:pointer;color:var(--ink)}
   <div class="card">
     <details>
       <summary>使い方メモ</summary>
-      <p>・「登録者比」は再生数÷チャンネル登録者数です。3倍以上の動画に「掘り出し」印が付きます。小さいチャンネルで伸びた動画は、テーマやタイトル自体に需要がある目安になります。</p>
+      <p>・「登録者比」は再生数÷チャンネル登録者数です。3倍以上かつ1,000回以上再生された動画に「掘り出し」印が付きます。登録者がごく少ないチャンネルは登録者比が極端に大きく出るので、再生数の下限で絞って見てください。小さいチャンネルで伸びた動画は、テーマやタイトル自体に需要がある目安になります。</p>
       <p>・動画検索は1回でAPI枠を約102消費します（1日の無料枠は通常10,000）。同じ言葉・同じ期間の再表示は枠を使いません。</p>
       <p>・サジェストはYouTubeの検索候補を取得しています。公式APIではないため、取得できなくなる場合があります。検索回数の数字は取得できません。</p>
       <p>・登録者数を非公開にしているチャンネルは登録者比が「—」になります。</p>
@@ -334,7 +340,8 @@ function runVideos(q){
   });
 }
 function view(){
-  var list = (current||[]).slice(), len = $('len').value, sort = $('sort').value;
+  var list = (current||[]).slice(), len = $('len').value, sort = $('sort').value, minV = +$('minViews').value;
+  if(minV) list = list.filter(function(i){ return (i.views||0) >= minV; });
   if(len==='short') list = list.filter(function(i){ return i.dur<=180; });
   if(len==='long')  list = list.filter(function(i){ return i.dur>180; });
   list.sort(function(a,b){
@@ -354,15 +361,16 @@ function render(){
       + '<div><a class="t" href="'+url+'" target="_blank" rel="noopener">'+esc(i.title)+'</a>'
       + '<div class="m">'+esc(i.ch)+'（登録 '+fmt(i.subs)+'）・'+new Date(i.date).toLocaleDateString('ja-JP')+'・'+durText(i.dur)+'</div>'
       + '<div class="n"><span>再生 <b>'+fmt(i.views)+'</b></span><span class="ratio">登録者比 <b>'+r+'</b></span>'
-      + (i.ratio!=null && i.ratio>=3 ? '<span class="badge">掘り出し</span>' : '')
+      + (i.ratio!=null && i.ratio>=3 && (i.views||0)>=1000 ? '<span class="badge">掘り出し</span>' : '')
       + '<span>高評価 '+fmt(i.likes)+'</span><span>コメント '+fmt(i.comments)+'</span></div></div></div>';
   }).join('');
   $('vidMsg').className = 'msg';
   $('vidMsg').textContent = list.length ? (list.length+'本を表示中（この期間に投稿され、再生数が多い上位25本から）')
-    : 'この条件に合う動画がありません。期間を広げるか、長さの絞り込みを外してください。';
+    : 'この条件に合う動画がありません。期間を広げるか、再生数の下限・長さの絞り込みを外してください。';
 }
 $('sort').onchange = function(){ if(current) render(); };
 $('len').onchange  = function(){ if(current) render(); };
+$('minViews').onchange = function(){ if(current) render(); };
 $('reSearch').onclick = function(){ if(currentQ) runVideos(currentQ); };
 
 $('copyCsv').onclick = function(){
