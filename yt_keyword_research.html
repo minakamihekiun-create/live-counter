@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YouTube キーワード調査 v1.0</title>
+<style>
+:root{
+  --bg:#f6f4ef; --card:#ffffff; --ink:#1f2a2e; --sub:#5f6b70; --line:#dcd8cf;
+  --accent:#1f6f6b; --accent-ink:#ffffff; --chip:#ebe7dd; --hot:#b4491f; --hot-bg:#fbe9df;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#15191b; --card:#1e2427; --ink:#e8e6e1; --sub:#9aa5a9; --line:#333b3f;
+    --accent:#4fb3ad; --accent-ink:#0e1a1a; --chip:#2a3236; --hot:#ff9a6b; --hot-bg:#3a261d; }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP","Yu Gothic UI",sans-serif;
+  line-height:1.6;font-size:15px}
+main{max-width:980px;margin:0 auto;padding:16px 14px 60px}
+h1{font-size:20px;margin:6px 0 2px}
+h2{font-size:16px;margin:0 0 8px}
+.lead{color:var(--sub);font-size:13px;margin:0 0 14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+label{font-size:13px;color:var(--sub);display:block;margin-bottom:4px}
+input[type=text],input[type=password],select{
+  width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;
+  background:var(--bg);color:var(--ink);font-size:16px}
+button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);
+  background:var(--chip);color:var(--ink);padding:9px 14px;min-height:40px}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+button:disabled{opacity:.5;cursor:default}
+.row{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
+.row > .grow{flex:1 1 200px}
+.cat{font-size:12px;color:var(--sub);margin:10px 0 4px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{background:var(--chip);border:1px solid transparent;border-radius:999px;padding:6px 12px;font-size:14px;min-height:34px}
+.chip.active{border-color:var(--accent);color:var(--accent);font-weight:600}
+.sug{display:flex;justify-content:space-between;align-items:center;gap:8px;
+  padding:8px 0;border-bottom:1px solid var(--line)}
+.sug:last-child{border-bottom:none}
+.sug span{word-break:break-all}
+.sug .btns{display:flex;gap:6px;flex-shrink:0}
+.sug button{padding:5px 10px;min-height:34px;font-size:13px}
+.msg{font-size:13px;color:var(--sub);margin:8px 0 0}
+.err{color:var(--hot)}
+.tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}
+.tools select{width:auto;font-size:14px;padding:8px}
+.v{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+.v:last-child{border-bottom:none}
+.v img{width:128px;height:72px;object-fit:cover;border-radius:6px;flex-shrink:0;background:var(--chip)}
+.v .t{font-weight:600;font-size:14px;line-height:1.4;color:var(--ink);text-decoration:none;display:block}
+.v .t:hover{text-decoration:underline}
+.v .m{font-size:12px;color:var(--sub);margin-top:3px}
+.v .n{font-size:13px;margin-top:3px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.badge{background:var(--hot-bg);color:var(--hot);border-radius:6px;padding:1px 7px;font-weight:700;font-size:12px}
+.ratio{font-variant-numeric:tabular-nums}
+details{font-size:13px;color:var(--sub)}
+details summary{cursor:pointer;color:var(--ink)}
+.quota{font-size:12px;color:var(--sub)}
+@media (max-width:520px){ .v img{width:104px;height:58px} }
+</style>
+</head>
+<body>
+<main>
+  <h1>YouTube キーワード調査 <small style="font-size:12px;color:var(--sub)">v1.0</small></h1>
+  <p class="lead">検索されている言葉（サジェスト）と、その言葉で最近伸びている動画を調べます。</p>
+
+  <div class="card">
+    <div class="row">
+      <div class="grow">
+        <label for="apiKey">YouTube Data API キー（このブラウザにだけ保存）</label>
+        <input type="password" id="apiKey" autocomplete="off" placeholder="AIza...">
+      </div>
+      <button id="saveKey">保存</button>
+    </div>
+    <p class="quota" id="quota"></p>
+  </div>
+
+  <div class="card">
+    <h2>1. 言葉を選ぶ</h2>
+    <div id="seeds"></div>
+    <div class="row" style="margin-top:12px">
+      <div class="grow">
+        <label for="kw">自分で入力</label>
+        <input type="text" id="kw" placeholder="例：職場 人間関係">
+      </div>
+      <button class="primary" id="goSuggest">サジェストを見る</button>
+    </div>
+  </div>
+
+  <div class="card" id="sugCard" hidden>
+    <h2>2. 検索されている言葉 <span id="sugFor" style="font-weight:400;color:var(--sub);font-size:13px"></span></h2>
+    <div id="sugList"></div>
+    <p class="msg" id="sugMsg"></p>
+  </div>
+
+  <div class="card" id="vidCard" hidden>
+    <h2>3. 伸びている動画 <span id="vidFor" style="font-weight:400;color:var(--sub);font-size:13px"></span></h2>
+    <div class="tools">
+      <select id="period" aria-label="期間">
+        <option value="7">直近7日</option>
+        <option value="30" selected>直近30日</option>
+        <option value="90">直近90日</option>
+        <option value="365">直近1年</option>
+      </select>
+      <select id="sort" aria-label="並び順">
+        <option value="ratio">登録者比が高い順</option>
+        <option value="views">再生数が多い順</option>
+        <option value="date">新しい順</option>
+      </select>
+      <select id="len" aria-label="長さ">
+        <option value="all">すべての長さ</option>
+        <option value="short">3分以内</option>
+        <option value="long">3分より長い</option>
+      </select>
+      <button id="reSearch">この期間で再検索</button>
+      <button id="copyCsv">CSVをコピー</button>
+    </div>
+    <div id="vidList"></div>
+    <p class="msg" id="vidMsg"></p>
+  </div>
+
+  <div class="card">
+    <details>
+      <summary>使い方メモ</summary>
+      <p>・「登録者比」は再生数÷チャンネル登録者数です。3倍以上の動画に「掘り出し」印が付きます。小さいチャンネルで伸びた動画は、テーマやタイトル自体に需要がある目安になります。</p>
+      <p>・動画検索は1回でAPI枠を約102消費します（1日の無料枠は通常10,000）。同じ言葉・同じ期間の再表示は枠を使いません。</p>
+      <p>・サジェストはYouTubeの検索候補を取得しています。公式APIではないため、取得できなくなる場合があります。検索回数の数字は取得できません。</p>
+      <p>・登録者数を非公開にしているチャンネルは登録者比が「—」になります。</p>
+    </details>
+  </div>
+</main>
+
+<script>
+(function(){
+'use strict';
+var SEEDS = [
+  ['職場', ['仕事 行きたくない','上司 怖い','職場 人間関係 疲れた','仕事 辞めたい']],
+  ['感情', ['イライラ 止まらない','不安 消えない','すぐ落ち込む','怒り 抑えられない']],
+  ['記憶', ['嫌な記憶 思い出す','過去 引きずる','昔のこと 許せない']],
+  ['性質', ['考えすぎる','人の目 気になる','繊細 疲れる','自己肯定感 低い']],
+  ['生き方', ['頑張れない','何もしたくない','楽に生きる 方法','生きづらい']]
+];
+var $ = function(id){ return document.getElementById(id); };
+var store = {
+  get: function(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } },
+  set: function(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+};
+function esc(s){ return String(s).replace(/[&<>"']/g,function(c){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+function fmt(n){ return n==null ? '—' : Number(n).toLocaleString('ja-JP'); }
+
+/* ---------- APIキーと枠の目安 ---------- */
+$('apiKey').value = store.get('ykr_key') || '';
+$('saveKey').onclick = function(){ store.set('ykr_key', $('apiKey').value.trim()); showQuota('キーを保存しました。'); };
+function today(){ // 枠は太平洋時間の0時にリセットされる
+  return new Date().toLocaleDateString('en-CA',{timeZone:'America/Los_Angeles'});
+}
+function usedQuota(){
+  try{ var o = JSON.parse(store.get('ykr_quota')||'{}'); return o.d===today() ? (o.u||0) : 0; }catch(e){ return 0; }
+}
+function addQuota(u){ store.set('ykr_quota', JSON.stringify({d:today(), u:usedQuota()+u})); showQuota(); }
+function showQuota(extra){
+  $('quota').textContent = (extra ? extra+' ' : '') + '今日このツールで使った枠の目安：' + fmt(usedQuota()) + ' / 10,000';
+}
+showQuota();
+
+/* ---------- 種キーワード ---------- */
+(function(){
+  var h = '';
+  SEEDS.forEach(function(g){
+    h += '<div class="cat">'+esc(g[0])+'</div><div class="chips">';
+    g[1].forEach(function(w){ h += '<button class="chip" data-w="'+esc(w)+'">'+esc(w)+'</button>'; });
+    h += '</div>';
+  });
+  $('seeds').innerHTML = h;
+  $('seeds').addEventListener('click', function(e){
+    var b = e.target.closest('.chip'); if(!b) return;
+    $('kw').value = b.dataset.w; runSuggest(b.dataset.w);
+  });
+})();
+$('goSuggest').onclick = function(){ var w=$('kw').value.trim(); if(w) runSuggest(w); };
+$('kw').addEventListener('keydown', function(e){ if(e.key==='Enter'){ var w=this.value.trim(); if(w) runSuggest(w); } });
+
+/* ---------- サジェスト（JSONP・1件ずつ順番に） ---------- */
+var sugCache = {};
+var jsonpBusy = Promise.resolve();
+function jsonpSuggest(q){
+  var run = function(){
+    return new Promise(function(resolve,reject){
+      var name = 'ykr_cb_'+Date.now()+'_'+Math.floor(Math.random()*1e6);
+      var s = document.createElement('script'), done = false;
+      function finish(ok,val){
+        if(done) return; done = true; clearTimeout(timer);
+        try{ delete window[name]; }catch(e){ window[name]=undefined; }
+        if(s.parentNode) s.parentNode.removeChild(s);
+        ok ? resolve(val) : reject(val);
+      }
+      function handler(data){
+        var out = [];
+        try{ (data[1]||[]).forEach(function(it){ var t = Array.isArray(it) ? it[0] : it; if(typeof t==='string') out.push(t); }); }catch(e){}
+        finish(true,out);
+      }
+      window[name] = handler;
+      // callback名が無視された場合の既定の受け口
+      window.google = window.google || {}; window.google.ac = window.google.ac || {};
+      window.google.ac.h = handler;
+      var timer = setTimeout(function(){ finish(false,new Error('timeout')); }, 7000);
+      s.onerror = function(){ finish(false,new Error('load')); };
+      s.src = 'https://suggestqueries.google.com/complete/search?client=youtube&ds=yt&hl=ja&gl=jp&q='
+            + encodeURIComponent(q) + '&jsonp=' + name + '&callback=' + name;
+      document.head.appendChild(s);
+    });
+  };
+  var p = jsonpBusy.then(run, run);
+  jsonpBusy = p.catch(function(){});
+  return p;
+}
+function getSuggest(q){
+  if(sugCache[q]) return Promise.resolve(sugCache[q]);
+  // そのままの形と、後ろに空白を足した形（続きの言葉が出やすい）の2通り
+  return Promise.all([jsonpSuggest(q), jsonpSuggest(q+' ').catch(function(){ return []; })]).then(function(r){
+    var seen = {}, out = [];
+    r[0].concat(r[1]).forEach(function(t){ if(!seen[t]){ seen[t]=1; out.push(t); } });
+    sugCache[q] = out; return out;
+  });
+}
+function runSuggest(q){
+  document.querySelectorAll('.chip').forEach(function(c){ c.classList.toggle('active', c.dataset.w===q); });
+  $('sugCard').hidden = false;
+  $('sugFor').textContent = '「'+q+'」';
+  $('sugList').innerHTML = '';
+  $('sugMsg').className = 'msg'; $('sugMsg').textContent = '取得中…';
+  getSuggest(q).then(function(list){
+    var all = [q].concat(list.filter(function(t){ return t!==q; }));
+    $('sugList').innerHTML = all.map(function(t){
+      return '<div class="sug"><span>'+esc(t)+'</span><span class="btns">'
+        + '<button data-act="deep" data-w="'+esc(t)+'">さらに広げる</button>'
+        + '<button class="primary" data-act="vid" data-w="'+esc(t)+'">動画を見る</button></span></div>';
+    }).join('');
+    $('sugMsg').textContent = list.length ? (list.length+'件の候補。上にあるほど一般的によく検索されています。')
+      : '候補が見つかりませんでした。言葉を短くすると出やすくなります。';
+  }).catch(function(){
+    $('sugList').innerHTML = '<div class="sug"><span>'+esc(q)+'</span><span class="btns">'
+      + '<button class="primary" data-act="vid" data-w="'+esc(q)+'">動画を見る</button></span></div>';
+    $('sugMsg').className = 'msg err';
+    $('sugMsg').textContent = 'サジェストを取得できませんでした（通信が遮断されたか、仕様が変わった可能性があります）。動画検索はそのまま使えます。';
+  });
+}
+$('sugList').addEventListener('click', function(e){
+  var b = e.target.closest('button'); if(!b) return;
+  if(b.dataset.act==='deep'){ $('kw').value = b.dataset.w; runSuggest(b.dataset.w); window.scrollTo({top:$('sugCard').offsetTop-8,behavior:'smooth'}); }
+  if(b.dataset.act==='vid'){ runVideos(b.dataset.w); }
+});
+
+/* ---------- 動画検索 ---------- */
+var vidCache = {}, current = null, currentQ = '';
+function api(path, params){
+  var key = $('apiKey').value.trim();
+  if(!key) return Promise.reject(new Error('APIキーを入力して「保存」を押してください。'));
+  params.key = key;
+  var qs = Object.keys(params).map(function(k){ return k+'='+encodeURIComponent(params[k]); }).join('&');
+  return fetch('https://www.googleapis.com/youtube/v3/'+path+'?'+qs).then(function(r){
+    return r.json().then(function(j){
+      if(!r.ok){
+        var reason = (j.error && j.error.errors && j.error.errors[0] && j.error.errors[0].reason) || '';
+        var m = reason==='quotaExceeded' ? '今日のAPI枠を使い切りました。日本時間の夕方（太平洋時間0時）に回復します。'
+              : (reason==='keyInvalid'||reason==='badRequest') ? 'APIキーが正しくないようです。'
+              : ((j.error && j.error.message) || 'APIエラー');
+        throw new Error(m);
+      }
+      return j;
+    });
+  });
+}
+function parseDur(s){ // ISO8601 → 秒
+  var m = /^P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(s||''); if(!m) return 0;
+  return (+m[1]||0)*86400 + (+m[2]||0)*3600 + (+m[3]||0)*60 + (+m[4]||0);
+}
+function durText(sec){
+  var h=Math.floor(sec/3600), m=Math.floor(sec%3600/60), s=sec%60;
+  return (h? h+':'+String(m).padStart(2,'0') : m)+':'+String(s).padStart(2,'0');
+}
+function fetchVideos(q, days){
+  var ck = q+'|'+days;
+  if(vidCache[ck]) return Promise.resolve(vidCache[ck]);
+  var after = new Date(Date.now()-days*86400000).toISOString();
+  var items;
+  return api('search',{part:'snippet',type:'video',q:q,order:'viewCount',publishedAfter:after,
+      regionCode:'JP',relevanceLanguage:'ja',maxResults:25}).then(function(j){
+    addQuota(100);
+    var ids = (j.items||[]).map(function(i){ return i.id && i.id.videoId; }).filter(Boolean);
+    if(!ids.length) return [];
+    return api('videos',{part:'snippet,statistics,contentDetails',id:ids.join(',')}).then(function(v){
+      addQuota(1);
+      items = (v.items||[]).map(function(x){
+        var th = x.snippet.thumbnails||{};
+        return { id:x.id, title:x.snippet.title, ch:x.snippet.channelTitle, chId:x.snippet.channelId,
+          date:x.snippet.publishedAt, thumb:(th.medium||th['default']||{}).url||'',
+          views: x.statistics.viewCount!=null ? +x.statistics.viewCount : null,
+          likes: x.statistics.likeCount!=null ? +x.statistics.likeCount : null,
+          comments: x.statistics.commentCount!=null ? +x.statistics.commentCount : null,
+          dur: parseDur(x.contentDetails.duration), subs:null, ratio:null };
+      });
+      var chIds = Object.keys(items.reduce(function(o,i){ o[i.chId]=1; return o; },{}));
+      return api('channels',{part:'statistics',id:chIds.join(',')});
+    }).then(function(c){
+      addQuota(1);
+      var map = {};
+      (c.items||[]).forEach(function(x){
+        map[x.id] = (x.statistics.hiddenSubscriberCount || x.statistics.subscriberCount==null) ? null : +x.statistics.subscriberCount;
+      });
+      items.forEach(function(i){
+        i.subs = map[i.chId]!=null ? map[i.chId] : null;
+        i.ratio = (i.subs && i.views!=null) ? i.views/i.subs : null;
+      });
+      return items;
+    });
+  }).then(function(list){ vidCache[ck] = list; return list; });
+}
+function runVideos(q){
+  currentQ = q;
+  $('vidCard').hidden = false;
+  $('vidFor').textContent = '「'+q+'」';
+  $('vidList').innerHTML = '';
+  $('vidMsg').className = 'msg'; $('vidMsg').textContent = '検索中…';
+  window.scrollTo({top:$('vidCard').offsetTop-8,behavior:'smooth'});
+  fetchVideos(q, +$('period').value).then(function(list){
+    if(currentQ!==q) return;
+    current = list; render();
+  }).catch(function(e){
+    $('vidMsg').className = 'msg err'; $('vidMsg').textContent = e.message || '取得に失敗しました。';
+  });
+}
+function view(){
+  var list = (current||[]).slice(), len = $('len').value, sort = $('sort').value;
+  if(len==='short') list = list.filter(function(i){ return i.dur<=180; });
+  if(len==='long')  list = list.filter(function(i){ return i.dur>180; });
+  list.sort(function(a,b){
+    if(sort==='views') return (b.views||0)-(a.views||0);
+    if(sort==='date')  return new Date(b.date)-new Date(a.date);
+    return (b.ratio==null?-1:b.ratio)-(a.ratio==null?-1:a.ratio);
+  });
+  return list;
+}
+function render(){
+  var list = view();
+  $('vidList').innerHTML = list.map(function(i){
+    var url = 'https://www.youtube.com/watch?v='+encodeURIComponent(i.id);
+    var r = i.ratio==null ? '—' : '×'+(i.ratio>=10 ? i.ratio.toFixed(0) : i.ratio.toFixed(1));
+    return '<div class="v">'
+      + (i.thumb ? '<a href="'+url+'" target="_blank" rel="noopener"><img loading="lazy" alt="" src="'+esc(i.thumb)+'"></a>' : '')
+      + '<div><a class="t" href="'+url+'" target="_blank" rel="noopener">'+esc(i.title)+'</a>'
+      + '<div class="m">'+esc(i.ch)+'（登録 '+fmt(i.subs)+'）・'+new Date(i.date).toLocaleDateString('ja-JP')+'・'+durText(i.dur)+'</div>'
+      + '<div class="n"><span>再生 <b>'+fmt(i.views)+'</b></span><span class="ratio">登録者比 <b>'+r+'</b></span>'
+      + (i.ratio!=null && i.ratio>=3 ? '<span class="badge">掘り出し</span>' : '')
+      + '<span>高評価 '+fmt(i.likes)+'</span><span>コメント '+fmt(i.comments)+'</span></div></div></div>';
+  }).join('');
+  $('vidMsg').className = 'msg';
+  $('vidMsg').textContent = list.length ? (list.length+'本を表示中（この期間に投稿され、再生数が多い上位25本から）')
+    : 'この条件に合う動画がありません。期間を広げるか、長さの絞り込みを外してください。';
+}
+$('sort').onchange = function(){ if(current) render(); };
+$('len').onchange  = function(){ if(current) render(); };
+$('reSearch').onclick = function(){ if(currentQ) runVideos(currentQ); };
+
+$('copyCsv').onclick = function(){
+  var list = view(); if(!list.length) return;
+  var q = function(s){ return '"'+String(s==null?'':s).replace(/"/g,'""')+'"'; };
+  var rows = [['キーワード','タイトル','チャンネル','登録者数','再生数','登録者比','高評価','コメント','投稿日','長さ(秒)','URL'].map(q).join(',')];
+  list.forEach(function(i){
+    rows.push([currentQ,i.title,i.ch,i.subs,i.views,i.ratio==null?'':i.ratio.toFixed(2),i.likes,i.comments,
+      i.date.slice(0,10),i.dur,'https://www.youtube.com/watch?v='+i.id].map(q).join(','));
+  });
+  var text = rows.join('\n'), btn = this;
+  var ok = function(){ btn.textContent='コピーしました'; setTimeout(function(){ btn.textContent='CSVをコピー'; },1500); };
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(ok, function(){ $('vidMsg').textContent='コピーできませんでした。'; });
+  } else {
+    var ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); ok(); }catch(e){} document.body.removeChild(ta);
+  }
+};
+})();
+</script>
+</body>
+</html>
