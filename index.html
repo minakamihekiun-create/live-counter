@@ -131,7 +131,6 @@
       <label class="chk"><input type="checkbox" id="chatOn" checked> チャットの勢いも記録 <small>（枠の消費 約6倍）</small></label>
     </div>
     <div class="row" style="margin-top:10px">
-      <div class="f-num"><label>急変の通知（人/回）</label><input id="jumpTh" type="number" min="0" value="20" title="1回の記録で同接がこの人数以上増減したら、自動でメモを残して通知します（0で使わない）"></div>
       <div style="flex:1 1 300px"><label>通知するキーワード（スペースや「、」で区切る）</label><input id="kwList" placeholder="例：申し込み　参加します　仙台" autocomplete="off"></div>
       <label class="chk"><input type="checkbox" id="kwSound" checked> 通知音を鳴らす</label>
       <label class="chk"><input type="checkbox" id="autoSave" checked> 配信終了時にCSV・画像・チャットCSV・まとめを自動保存</label>
@@ -175,7 +174,6 @@
         <div class="f-time"><label>時刻（空欄＝今）</label><input id="memoTime" placeholder="7:30 / 7:30:15" autocomplete="off"></div>
         <div class="f-text"><label>メモ</label><input id="memoText" placeholder="例：話題が○○に切り替わった" autocomplete="off"></div>
         <button id="btnMemo">メモ</button>
-        <button id="btnScan" title="今の「急変の通知」の人数で、この配信の急増・急落をさかのぼって洗い出します">急変を洗い出す</button>
       </div>
       <div id="memoMsg" class="memo-msg"></div>
       <div id="memoList" class="memo-list"></div>
@@ -203,7 +201,6 @@
         ・チャットの勢いは、前回の記録から今回までに投稿されたコメント数を「1分あたり」に換算した値です。記録開始直後の1回目は空欄になります。チャットがオフやメンバー限定の配信では記録されません。<br>
         ・チャットした人数は、記録を始めてからチャットに書き込んだ人を、同じ人の重複を除いて数えた人数です（「チャットの勢いも記録」がオンのときだけ数えます）。記録開始より前の書き込みは含みません。数えるために、投稿者のチャンネルIDとチャットの本文・投稿時刻をこのブラウザに保存しています（投稿者の名前は保存しません。画面やCSVでは投稿者を配信ごとの番号で表示します）。<br>
         ・配信開始前（待機所）のチャットも記録します。チャンネル監視中は配信予定時刻の「開始前の記録」分前から、配信URLを入れた場合は監視スタートを押した時点から記録します。開始前の同接（待機人数）は、YouTubeが値を返したときだけ記録します（返さないことが多いです）。開始前の値はグラフの線・ピーク・平均には含めず、ツールチップとCSVにだけ出します。<br>
-        ・「急変の通知」：1回の記録で同接がこの人数以上増減すると、自動でメモ（緑＝急増／赤＝急落）を残し、画面右下と音で知らせます。過去の記録は「急変を洗い出す」でさかのぼって付けられます。<br>
         ・「通知するキーワード」：記録中のチャットにその言葉が出ると、自動でメモ（紫）を残して知らせます。<br>
         ・記録は保存から30日で自動的に削除されます（YouTube API の規約に合わせた動作です）。3日前からプルダウンに「あと○日で削除」と出るので、残したい記録はCSVで保存してください。CSVから復元した記録は、復元した日から30日間残ります。<br>
         ・PCがスリープしたりタブを閉じたりすると記録が止まります。記録したデータはこのブラウザに保存されるので、再読み込みしても残ります。<br>
@@ -213,6 +210,8 @@
       </div>
       <div class="history">
         <b>更新履歴</b><br>
+        v1.12　急変の自動マーカー・通知を廃止し、まとめレポートに「同接の大きな動き」を表示。よく出た言葉の切れ端（「わりました」など）を修正<br>
+        v1.11　チャットCSVの読み込み（クラウド記録版のスプレッドシートからも復元できる）<br>
         v1.10　急増・急落の自動マーカー、キーワード通知、配信の重ね比べ、まとめレポート、よく出た言葉、作者リンク・お布施、記録の30日自動削除<br>
         v1.9　チャット本文の保存・キーワード検索・チャットCSVを追加（投稿者は番号で区別、名前は保存しない）<br>
         v1.8　配信開始前（待機所）のチャットを記録、グラフに開始前の区間を表示<br>
@@ -246,7 +245,7 @@ const LINE_URL    = 'https://lin.ee/Rdyrjkd';   // 公式LINEのURL
 // 記録をブラウザに残す日数（YouTube API の規約に合わせて30日）
 const RETENTION_DAYS = 30;
 // ======================
-const APP_VERSION = 'v1.10';
+const APP_VERSION = 'v1.12';
 (() => {
   // ---------- usage log (anonymous) ----------
   // 送るのは「匿名の利用者ID・操作の種類・数字だけの詳細・バージョン」のみ。チャンネル名・動画・タイトルは送らない。
@@ -289,10 +288,8 @@ const APP_VERSION = 'v1.10';
   $('pollSec').value = store.get('ytlv_poll', 60);
   $('detectMin').value = store.get('ytlv_detect', 2);
   $('preMin').value = store.get('ytlv_pre', 10);
-  $('jumpTh').value = store.get('ytlv_jump', 20);
   $('kwList').value = store.get('ytlv_kw', '');
   $('kwSound').checked = store.get('ytlv_kwsound', true);
-  $('jumpTh').onchange = () => store.set('ytlv_jump', Math.max(0, +$('jumpTh').value || 0));
   $('kwList').onchange = () => store.set('ytlv_kw', $('kwList').value);
   $('kwSound').onchange = () => store.set('ytlv_kwsound', $('kwSound').checked);
   $('chatOn').checked = store.get('ytlv_chat', true);
@@ -495,7 +492,6 @@ const APP_VERSION = 'v1.10';
         if($('chatOn').checked && lsd.activeLiveChatId) chat = await pollChat(lsd.activeLiveChatId, current.videoId);
         else chatState = null;
         current.points.push([Date.now(), v, likes, chat ? chat.rate : null, chat ? chat.total : null, chat ? chat.fresh : null, pre ? 1 : 0]);
-        checkJumpLive(current);
         if(chat && chat.msgs) checkKeywords(current, chat.msgs);
         save(); if(current.points.length === 1) refreshSelect(); else if(viewId === current.videoId) render();
         if(pre){
@@ -982,8 +978,43 @@ const APP_VERSION = 'v1.10';
   }
   const num = x => { if(x == null) return null; x = String(x).replace(/,/g, '').trim(); if(x === '') return null; const n = Number(x); return isFinite(n) ? n : null; };
 
+  function videoIdFromName(name){
+    const fm = name.match(/_([\w-]{11})(?:_チャット)?(?:\s*\(\d+\))?\.csv$/i);
+    return fm ? fm[1] : null;
+  }
+  function isChatHeader(h){ return h.includes('本文') && h.includes('投稿者番号'); }
+
+  // chat CSV (from the tool or the cloud recorder) -> stored chat messages
+  async function importChatCsv(file, rows){
+    const head = rows[0].map(h => h.trim()), col = n => head.indexOf(n);
+    const cT = col('時刻'), cX = col('本文'), cA = col('投稿者番号'), cK = col('メッセージの種類');
+    const videoId = videoIdFromName(file.name);
+    if(!videoId) throw new Error('動画IDがわかりません。保存したときのファイル名のまま読み込んでください');
+    const s = sessions[videoId];
+    if(!s) throw new Error('先に同じ配信の同接CSVを読み込んでください（一緒に選べば自動で順番に読み込みます）');
+    const d = await ensureChatters(videoId);
+    const have = new Set(d.m.map(m => Math.floor(m[0] / 1000) + '|' + (m[3] || '')));
+    const msgs = [];
+    for(const r of rows.slice(1)){
+      const ts = parseDateTime(r[cT] || ''); if(ts == null) continue;
+      const text = cX >= 0 ? (r[cX] || '') : '';
+      if(have.has(Math.floor(ts / 1000) + '|' + text)) continue;
+      const kind = cK >= 0 ? (r[cK] || '') : '';
+      const type = kind.startsWith('スーパーチャット') ? 1 : kind.startsWith('スーパーステッカー') ? 2 : 0;
+      const amount = type ? kind.replace(/^スーパー(チャット|ステッカー)\s*/, '') : '';
+      const num = cA >= 0 ? (r[cA] || '').trim() : '';
+      // authors are known only by their per-stream number in the CSV
+      msgs.push({ts, author: num ? 'csv' + num : null, type, text, amount});
+    }
+    msgs.sort((a, b) => a.ts - b.ts);
+    addChatMessages(videoId, msgs);
+    saveChatters(videoId);
+    return {s, added: msgs.length, total: rows.length - 1, chat: true};
+  }
+
   async function importCsvFile(file){
     const rows = parseCsv(await readText(file));
+    if(rows.length && isChatHeader(rows[0].map(h => h.trim()))) return importChatCsv(file, rows);
     if(rows.length < 2) throw new Error('データの行がありません');
     const head = rows[0].map(h => h.trim());
     const col = name => head.indexOf(name);
@@ -997,7 +1028,7 @@ const APP_VERSION = 'v1.10';
     let videoId = null;
     const u = get(first, cU).match(/(?:[?&]v=|youtu\.be\/|\/live\/)([\w-]{11})/);
     if(u) videoId = u[1];
-    if(!videoId){ const fm = file.name.match(/_([\w-]{11})(?:\s*\(\d+\))?\.csv$/i); if(fm) videoId = fm[1]; }
+    if(!videoId) videoId = videoIdFromName(file.name);
     if(!videoId) throw new Error('動画IDがわかりません。ツールで保存したときのファイル名のまま読み込んでください');
 
     // points
@@ -1022,7 +1053,7 @@ const APP_VERSION = 'v1.10';
               .reduce((a, b) => Math.abs(b - ts) < Math.abs(a - ts) ? b : a);
             mts = best;
           }
-          memos.push({ts: mts, text: t});
+          if(!/^(急増|急落) [+−]\d/.test(t)) memos.push({ts: mts, text: t});   // skip auto memos of the removed sudden-change feature
         });
       }
     }
@@ -1071,12 +1102,18 @@ const APP_VERSION = 'v1.10';
   }
 
   async function importFiles(files){
-    files = [...files].filter(f => /\.csv$/i.test(f.name));
+    files = [...files].filter(f => /\.csv$/i.test(f.name))
+      .sort((a, b) => (/チャット/.test(a.name) ? 1 : 0) - (/チャット/.test(b.name) ? 1 : 0));
     if(!files.length){ ioMsg('CSVファイルを選んでください', true); return; }
     const lines = []; let lastId = null, anyErr = false;
     for(const f of files){
       try{
         const r = await importCsvFile(f);
+        if(r.chat){
+          lastId = r.s.videoId;
+          lines.push(`✓ ${f.name}：チャット${r.added}件を復元しました` + (r.added < r.total ? `（${r.total - r.added}件はすでにあったので統合）` : ''));
+          continue;
+        }
         const enriched = await enrichFromApi(r.s);
         lastId = r.s.videoId;
         let line = `✓ ${f.name}：${r.added}件のデータ`;
@@ -1173,43 +1210,46 @@ const APP_VERSION = 'v1.10';
   $('toast').onclick = () => $('toast').style.display = 'none';
 
   // ---------- auto memos: sudden rise / drop ----------
-  function jumpMemo(a, b, th){
-    if(!th || !a || !b || a[1] == null || b[1] == null || isPre(a) || isPre(b)) return null;
-    const d = b[1] - a[1];
-    if(Math.abs(d) < th) return null;
-    return {ts: a[0], kind: d > 0 ? 'up' : 'down', auto: true,
-            text: `${d > 0 ? '急増' : '急落'} ${d > 0 ? '+' : '−'}${fmt(Math.abs(d))}人（${hm(a[0])}→${hm(b[0])}）`};
-  }
   function addAutoMemo(s, m){
     s.memos = s.memos || [];
     if(s.memos.some(x => x.auto && x.kind === m.kind && Math.abs(x.ts - m.ts) < 1000)) return false;
     s.memos.push(m); return true;
   }
-  function checkJumpLive(s){
-    const th = Math.max(0, +$('jumpTh').value || 0);
+  // ---------- biggest moves of the viewer count (report only) ----------
+  // change over about one minute; the first 2 minutes after the start (the ramp) are ignored
+  function bigMoves(s, perSide = 3){
     const live = s.points.filter(p => p[1] != null && !isPre(p));
-    if(live.length < 2 || live[live.length-1] !== s.points[s.points.length-1]) return;
-    const m = jumpMemo(live[live.length-2], live[live.length-1], th);
-    if(m && addAutoMemo(s, m)){
-      save();
-      notify(m.kind, m.text, s.title);
-      log('自動メモ: ' + m.text);
+    const start = streamStart(s), cand = [];
+    for(let i = 1; i < live.length; i++){
+      const b = live[i]; let j = i - 1;
+      while(j >= 0 && b[0] - live[j][0] < 55000) j--;
+      if(j < 0) continue;
+      const a = live[j];
+      if(a[0] < start + 120000) continue;
+      const d = b[1] - a[1];
+      if(Math.abs(d) < 5) continue;
+      cand.push({ts: a[0], end: b[0], d, from: a[1], to: b[1]});
     }
+    const pick = sign => {
+      const out = [];
+      for(const c of cand.filter(c => Math.sign(c.d) === sign).sort((x, y) => Math.abs(y.d) - Math.abs(x.d))){
+        if(out.some(o => c.ts < o.end && o.ts < c.end)) continue;   // overlapping windows = same move
+        out.push(c); if(out.length >= perSide) break;
+      }
+      return out;
+    };
+    return {up: pick(1), down: pick(-1)};
   }
-  function scanJumps(s, th){
-    const live = s.points.filter(p => p[1] != null && !isPre(p));
+  // remove auto memos made by the old sudden-change feature (v1.10–1.12 drafts)
+  (function dropOldJumpMemos(){
     let n = 0;
-    for(let i = 1; i < live.length; i++){ const m = jumpMemo(live[i-1], live[i], th); if(m && addAutoMemo(s, m)) n++; }
-    return n;
-  }
-  $('btnScan').onclick = () => {
-    const s = sessions[viewId]; if(!s){ memoMsg('配信を選んでください', true); return; }
-    const th = Math.max(0, +$('jumpTh').value || 0);
-    if(!th){ memoMsg('「急変の通知（人/回）」に1以上の人数を入れてください', true); return; }
-    const n = scanJumps(s, th);
-    save(); render();
-    memoMsg(n ? `${th}人以上の急増・急落を${n}件見つけて、メモに追加しました` : `${th}人以上の急増・急落は見つかりませんでした（すでにあるものは追加しません）`);
-  };
+    for(const s of Object.values(sessions)){
+      const before = (s.memos || []).length;
+      s.memos = (s.memos || []).filter(m => !(m.auto && (m.kind === 'up' || m.kind === 'down')));
+      n += before - s.memos.length;
+    }
+    if(n) save();
+  })();
 
   // ---------- keyword alerts ----------
   function kwWords(){ return $('kwList').value.split(/[\s　、,，]+/).map(w => w.trim()).filter(Boolean); }
@@ -1239,20 +1279,33 @@ const APP_VERSION = 'v1.10';
   }
 
   // ---------- frequent words ----------
-  const STOP = new Set(['です','ます','でした','ました','ません','ください','ござい','ございます','から','まで','ので','けど','けれど','でも','って','こと','もの','よう','これ','それ','あれ','この','その','あの','ここ','そこ','する','した','して','しま','ない','ある','いる','なる','なっ','やっ','いう','言う','思い','思う','さん','ちゃん','くん','たい','てる','でき','あり','それで','そして','とても','ちょっと','みたい','www','ｗｗｗ']);
+  const STOP = new Set(['です','ます','でした','ました','ません','ください','ござい','ございます','から','まで','ので','けど','けれど','でも','って','こと','もの','よう','これ','それ','あれ','この','その','あの','ここ','そこ','する','した','して','しま','ない','ある','いる','なる','なっ','やっ','いう','言う','思い','思う','さん','ちゃん','くん','たい','てる','でき','あり','それで','そして','とても','ちょっと','みたい','www','ｗｗｗ',
+    'します','しました','いました','あります','なります','なりました','いたします','致します','今日','本日','皆さん','皆さま','みなさん','みなさま','よろしく','宜しく','願いします','願い致します','願いいたします']);
   const segmenter = (window.Intl && Intl.Segmenter) ? new Intl.Segmenter('ja', {granularity:'word'}) : null;
   function wordsOf(text){
-    const out = new Set();
-    const add = w => {
+    const out = new Set(), toks = [];
+    const HAN = /\p{Script=Han}/u, HIRA = /^[ぁ-ゟ]+$/;
+    if(segmenter){
+      for(const sg of segmenter.segment(text)){
+        if(!sg.isWordLike) continue;
+        const t = sg.segment, before = text[sg.index - 1] || '', last = toks[toks.length - 1];
+        // hiragana right after a kanji is usually a cut-off ending (伝|わりました, 楽|しみです, 参加|します):
+        // glue it to a one-kanji word, otherwise drop it. Whole words (おめでとう…, ありがとう…) are kept.
+        if(HIRA.test(t) && HAN.test(before) && t.length <= 6 && !/^[おご]/.test(t) && !/^(ありがと|よろし|すご|おはよ)/.test(t)){
+          if(last && last.end === sg.index && last.w.length === 1 && t.length >= 2){ last.w = (last.w + t).replace(/[おご]$/, ''); last.end = sg.index + t.length; }
+          continue;
+        }
+        toks.push({w: t, end: sg.index + t.length});
+      }
+    } else (text.match(/[\p{L}\p{N}ー]{2,}/gu) || []).forEach(w => toks.push({w}));
+    for(let {w} of toks){
       w = w.trim().toLowerCase();
-      if(w.length < 2 || STOP.has(w)) return;
-      if(/^[\d\s\p{P}\p{S}]+$/u.test(w)) return;
-      if(/^[ぁ-ゟ]{1,2}$/.test(w)) return;     // short hiragana = mostly particles
-      if(/^[a-z0-9]{1,2}$/.test(w)) return;            // stray short latin tokens
+      if(w.length < 2 || STOP.has(w)) continue;
+      if(/^[\d\s\p{P}\p{S}]+$/u.test(w)) continue;
+      if(/^[ぁ-ゟ]{1,2}$/.test(w)) continue;   // short hiragana = mostly particles
+      if(/^[a-z0-9]{1,2}$/.test(w)) continue;          // stray short latin tokens
       out.add(w);
-    };
-    if(segmenter){ for(const seg of segmenter.segment(text)) if(seg.isWordLike) add(seg.segment); }
-    else (text.match(/[\p{L}\p{N}ー]{2,}/gu) || []).forEach(add);
+    }
     return out;
   }
   // ranking by number of different people who used the word
@@ -1390,20 +1443,34 @@ const APP_VERSION = 'v1.10';
       g.fillStyle = '#e8eaf0'; g.font = `700 22px ${font}`; g.fillText(fit(v, bw - 20), x+12, y+28);
       g.fillStyle = '#8b93a7'; g.font = `11px ${font}`; g.fillText(fit(sub, bw - 20), x+12, y+60);
     });
-    g.save(); g.translate(20, 210); drawChart(g, W - 40, 360, all, sortedMemos(s), s.actualStart ? Date.parse(s.actualStart) : null); g.restore();
-    // events
+    const mv = bigMoves(s);
+    const mvMarks = [...mv.up.map(c => ({ts: c.ts, kind: 'up', text: `+${fmt(c.d)}人`})), ...mv.down.map(c => ({ts: c.ts, kind: 'down', text: `−${fmt(-c.d)}人`}))];
+    g.save(); g.translate(20, 210); drawChart(g, W - 40, 360, all, sortedMemos(s).concat(mvMarks).sort((a, b) => a.ts - b.ts), s.actualStart ? Date.parse(s.actualStart) : null); g.restore();
     const colY = 600, colW = (W - 80 - 30) / 2;
-    g.fillStyle = '#e8eaf0'; g.font = `700 16px ${font}`; g.fillText('主な出来事（メモ・急変・キーワード）', 40, colY);
-    const memos = sortedMemos(s);
-    g.font = `13px ${font}`;
     const color = k => k === 'up' ? '#3ecf8e' : k === 'down' ? '#ff6b6b' : k === 'kw' ? '#c792ea' : '#f5b54a';
-    if(!memos.length){ g.fillStyle = '#8b93a7'; g.fillText('メモはありません', 40, colY + 30); }
-    memos.slice(0, 16).forEach((m, i) => {
-      const y = colY + 30 + i * 24;
-      g.fillStyle = '#8b93a7'; g.fillText(`${hm(m.ts)}（${elapsedLabel(m.ts - sm.t0)}）`, 40, y);
-      g.fillStyle = color(m.kind); g.fillText(fit(m.text, colW - 150), 190, y);
+    let y = colY;
+    // big moves
+    g.fillStyle = '#e8eaf0'; g.font = `700 16px ${font}`; g.fillText('同接の大きな動き（約1分間の増減・開始直後を除く）', 40, y); y += 30;
+    g.font = `13px ${font}`;
+    const moves = [...mv.up, ...mv.down].sort((x, y) => x.ts - y.ts);
+    if(!moves.length){ g.fillStyle = '#8b93a7'; g.fillText('目立った増減はありませんでした', 40, y); y += 24; }
+    for(const c of moves){
+      g.fillStyle = '#8b93a7'; g.fillText(`${hms(c.ts)}→${hms(c.end)}（${elapsedLabel(c.ts - sm.t0)}）`, 40, y);
+      g.fillStyle = c.d > 0 ? '#3ecf8e' : '#ff6b6b';
+      g.fillText(`${c.d > 0 ? '▲ +' : '▼ −'}${fmt(Math.abs(c.d))}人（${fmt(c.from)}→${fmt(c.to)}人）`, 300, y); y += 24;
+    }
+    // memos & keywords
+    y += 14;
+    g.fillStyle = '#e8eaf0'; g.font = `700 16px ${font}`; g.fillText('メモ・キーワード', 40, y); y += 30;
+    const memos = sortedMemos(s), room = Math.max(1, Math.floor((H - 60 - y) / 24));
+    g.font = `13px ${font}`;
+    if(!memos.length){ g.fillStyle = '#8b93a7'; g.fillText('メモはありません', 40, y); }
+    memos.slice(0, room).forEach((m, i) => {
+      const yy = y + i * 24;
+      g.fillStyle = '#8b93a7'; g.fillText(`${hm(m.ts)}（${elapsedLabel(m.ts - sm.t0)}）`, 40, yy);
+      g.fillStyle = color(m.kind); g.fillText(fit(m.text, colW - 150), 190, yy);
     });
-    if(memos.length > 16){ g.fillStyle = '#8b93a7'; g.fillText(`ほか ${memos.length - 16}件`, 40, colY + 30 + 16 * 24); }
+    if(memos.length > room){ g.fillStyle = '#8b93a7'; g.fillText(`ほか ${memos.length - room}件`, 40, y + room * 24); }
     // words
     const wx = 40 + colW + 30;
     g.fillStyle = '#e8eaf0'; g.font = `700 16px ${font}`; g.fillText('チャットでよく出た言葉（使った人数）', wx, colY);
